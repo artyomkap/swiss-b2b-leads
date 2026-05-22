@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Swiss B2B Lead Search</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --border: #e2e6ea;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --text: #1a202c;
+      --muted: #6b7280;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    }
+
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header { background: var(--surface); border-bottom: 1px solid var(--border);
+             padding: 1rem 1.5rem; display: flex; align-items: center; gap: .75rem; }
+    header h1 { font-size: 1.25rem; font-weight: 700; }
+    header span { color: var(--muted); font-size: .875rem; }
+
+    .layout { display: grid; grid-template-columns: 340px 1fr; gap: 1.5rem;
+              padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+    .card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem; }
+
+    .card h2 { font-size: .875rem; font-weight: 600; text-transform: uppercase;
+               letter-spacing: .05em; color: var(--muted); margin-bottom: .75rem; }
+
+    .field { margin-bottom: 1.1rem; }
+    .field > .field-label { font-size: .875rem; font-weight: 600; margin-bottom: .4rem;
+                            display: flex; align-items: center; justify-content: space-between; }
+    .field-actions { display: flex; gap: .4rem; }
+    .field-actions button { width: auto; padding: .15rem .55rem; font-size: .75rem;
+                            font-weight: 500; background: var(--bg); color: var(--muted);
+                            border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+    .field-actions button:hover { background: var(--border); color: var(--text); }
+
+    /* Checkbox grid */
+    .chk-scroll { max-height: 150px; overflow-y: auto; border: 1px solid var(--border);
+                  border-radius: var(--radius); padding: .5rem; background: var(--bg); }
+    .chk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; }
+    .chk-item { display: flex; align-items: center; gap: .4rem; font-size: .8rem;
+                padding: .2rem .35rem; border-radius: 4px; cursor: pointer;
+                white-space: nowrap; overflow: hidden; }
+    .chk-item:hover { background: rgba(37,99,235,.07); }
+    .chk-item input[type=checkbox] { accent-color: var(--primary); width: 14px; height: 14px;
+                                     flex-shrink: 0; cursor: pointer; }
+    .chk-item span { overflow: hidden; text-overflow: ellipsis; }
+
+    /* Industries full-width single column */
+    .chk-grid.single { grid-template-columns: 1fr; }
+
+    /* Custom industry input */
+    .custom-row { display: flex; gap: .4rem; margin-top: .5rem; }
+    .custom-row input { flex: 1; border: 1px solid var(--border); border-radius: var(--radius);
+                        padding: .4rem .6rem; font-size: .82rem; outline: none; }
+    .custom-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.15); }
+    .custom-row button { width: auto; padding: .4rem .8rem; font-size: .85rem; font-weight: 700;
+                         background: var(--primary); color: #fff; border-radius: var(--radius); }
+    .custom-row button:hover { background: var(--primary-hover); }
+
+    /* Tags */
+    .tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .45rem; }
+    .tag-custom { display: inline-flex; align-items: center; gap: .3rem;
+                  padding: .2rem .55rem; border-radius: 12px; font-size: .75rem; font-weight: 500;
+                  background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+    .tag-custom .rm { cursor: pointer; font-size: .9rem; line-height: 1; opacity: .6; }
+    .tag-custom .rm:hover { opacity: 1; }
+
+    /* Range */
+    .range-row { display: flex; align-items: center; gap: .75rem; }
+    .range-row input[type=range] { flex: 1; accent-color: var(--primary); }
+    .range-val { font-weight: 600; min-width: 2.2rem; text-align: right; font-size: .9rem; }
+
+    /* Sources */
+    .sources { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
+    .src-item { display: flex; align-items: center; gap: .45rem; font-size: .85rem;
+                padding: .25rem 0; }
+    .src-item input[type=checkbox] { accent-color: var(--primary); width: 15px; height: 15px; }
+    .src-item.disabled { opacity: .4; }
+
+    button { width: 100%; padding: .65rem 1rem; border: none; border-radius: var(--radius);
+             font-size: .9rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .btn-primary { background: var(--primary); color: #fff; margin-top: .5rem; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { background: var(--muted); cursor: not-allowed; }
+
+    /* API Keys */
+    .key-row { display: flex; align-items: center; gap: .4rem; margin-bottom: .55rem; }
+    .key-row label { font-size: .78rem; font-weight: 600; color: var(--muted);
+                     width: 110px; flex-shrink: 0; }
+    .key-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot.ok { background: var(--success); }
+    .dot.no { background: var(--danger); }
+    .key-input-wrap { flex: 1; display: flex; align-items: center;
+                      border: 1px solid var(--border); border-radius: var(--radius);
+                      background: var(--bg); overflow: hidden; }
+    .key-input-wrap:focus-within { border-color: var(--primary);
+                                   box-shadow: 0 0 0 2px rgba(37,99,235,.15); }
+    .key-input-wrap input { flex: 1; border: none; background: transparent;
+                            padding: .35rem .5rem; font-size: .78rem; outline: none;
+                            font-family: monospace; color: var(--text); min-width: 0; }
+    .eye-btn { background: none; border: none; width: auto; padding: .3rem .5rem;
+               cursor: pointer; color: var(--muted); font-size: .85rem; line-height: 1; }
+    .eye-btn:hover { color: var(--text); }
+    .save-keys-btn { margin-top: .5rem; padding: .5rem; font-size: .82rem;
+                     background: #f0fdf4; color: var(--success);
+                     border: 1px solid #bbf7d0; border-radius: var(--radius); }
+    .save-keys-btn:hover { background: #dcfce7; }
+    .save-msg { font-size: .78rem; margin-top: .35rem; text-align: center; min-height: 1.1rem; }
+
+    /* Progress */
+    #progress-box { display: none; }
+    #log { background: #0f172a; color: #94a3b8; font-family: monospace; font-size: .78rem;
+           padding: 1rem; border-radius: var(--radius); height: 220px; overflow-y: auto;
+           white-space: pre-wrap; word-break: break-all; }
+    #log .done-line { color: #4ade80; font-weight: 700; }
+
+    /* Metrics */
+    #metrics { display: none; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 1rem; }
+    @media (max-width: 600px) { .metric-grid { grid-template-columns: repeat(2,1fr); } }
+    .metric { text-align: center; }
+    .metric .val { font-size: 2rem; font-weight: 700; color: var(--primary); }
+    .metric .lbl { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+
+    /* Stats + Leads */
+    #stats-box { display: none; }
+    #leads-box { display: none; }
+    .table-toolbar { display: flex; gap: .75rem; margin-bottom: .75rem; flex-wrap: wrap; }
+    .table-toolbar input { flex: 1; min-width: 180px; border: 1px solid var(--border);
+                           border-radius: var(--radius); padding: .45rem .75rem;
+                           font-size: .875rem; outline: none; }
+    .table-toolbar input:focus { border-color: var(--primary); }
+    .count-badge { font-size: .8rem; color: var(--muted); align-self: center; }
+
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th { background: var(--bg); padding: .6rem .75rem; text-align: left; font-weight: 600;
+         font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
+         color: var(--muted); border-bottom: 2px solid var(--border); cursor: pointer;
+         white-space: nowrap; user-select: none; }
+    th:hover { color: var(--primary); }
+    th .sort-icon { margin-left: .3rem; opacity: .4; }
+    th.asc .sort-icon::after { content: "▲"; }
+    th.desc .sort-icon::after { content: "▼"; }
+    th:not(.asc):not(.desc) .sort-icon::after { content: "⇅"; }
+    td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: #f8fafc; }
+    td a { color: var(--primary); text-decoration: none; font-size: .8rem; }
+    td a:hover { text-decoration: underline; }
+    .score-bar { display: flex; align-items: center; gap: .4rem; }
+    .score-bar .bar { height: 6px; border-radius: 3px; background: var(--primary); }
+    .tag { display: inline-block; padding: .15rem .5rem; border-radius: 12px;
+           font-size: .72rem; font-weight: 500; }
+    .tag-sch { background: #dbeafe; color: #1d4ed8; }
+    .tag-gp  { background: #dcfce7; color: #15803d; }
+    .tag-gs  { background: #fef9c3; color: #a16207; }
+
+    /* Export */
+    #export-box { display: none; }
+    .export-btns { display: flex; gap: .75rem; flex-wrap: wrap; }
+    .btn-export { flex: 1; min-width: 140px; background: var(--bg); color: var(--text);
+                  border: 1px solid var(--border); }
+    .btn-export:hover { background: var(--border); }
+  </style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:1.4rem">&#128269;</span>
+  <h1>Swiss B2B Lead Search</h1>
+  <span>Collect, compare and export leads from multiple Swiss sources</span>
+  <a href="/history" style="margin-left:auto;font-size:.875rem;color:var(--primary);text-decoration:none;font-weight:500">&#128203; History</a>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT: Search form -->
+  <aside>
+    <div class="card">
+      <h2>API Keys</h2>
+
+      <div class="key-row">
+        <label>Google Places</label>
+        <div class="dot" id="dot-google_places"></div>
+        <div class="key-input-wrap">
+          <input type="password" id="key-GOOGLE_API_KEY" placeholder="AIza..." autocomplete="off" />
+          <button class="eye-btn" type="button" onclick="toggleEye('key-GOOGLE_API_KEY', this)" title="Show/hide">&#128065;</button>
+        </div>
+      </div>
+
+      <div class="key-row">
+        <label>SerpAPI</label>
+        <div class="dot" id="dot-google_search"></div>
+        <div class="key-input-wrap">
+          <input type="password" id="key-SERP_API_KEY" placeholder="serpapi key..." autocomplete="off" />
+          <button class="eye-btn" type="button" onclick="toggleEye('key-SERP_API_KEY', this)" title="Show/hide">&#128065;</button>
+        </div>
+      </div>
+
+      <div class="key-row">
+        <label>Tavily</label>
+        <div class="dot" id="dot-tavily"></div>
+        <div class="key-input-wrap">
+          <input type="password" id="key-TAVILY_API_KEY" placeholder="tvly-..." autocomplete="off" />
+          <button class="eye-btn" type="button" onclick="toggleEye('key-TAVILY_API_KEY', this)" title="Show/hide">&#128065;</button>
+        </div>
+      </div>
+
+      <div class="key-row">
+        <label>Firecrawl</label>
+        <div class="dot" id="dot-firecrawl"></div>
+        <div class="key-input-wrap">
+          <input type="password" id="key-FIRECRAWL_API_KEY" placeholder="fc-..." autocomplete="off" />
+          <button class="eye-btn" type="button" onclick="toggleEye('key-FIRECRAWL_API_KEY', this)" title="Show/hide">&#128065;</button>
+        </div>
+      </div>
+
+      <button class="save-keys-btn" type="button" onclick="saveKeys()">&#10003; Save &amp; Apply Keys</button>
+      <div class="save-msg" id="save-msg"></div>
+
+      <h2 style="margin-top:.75rem">Search Parameters</h2>
+
+      <!-- Cities -->
+      <div class="field">
+        <div class="field-label">
+          Cities
+          <div class="field-actions">
+            <button type="button" onclick="selectAllCities(true)">All</button>
+            <button type="button" onclick="selectAllCities(false)">None</button>
+          </div>
+        </div>
+        <div class="chk-scroll">
+          <div class="chk-grid" id="cities-grid"></div>
+        </div>
+      </div>
+
+      <!-- Industries -->
+      <div class="field">
+        <div class="field-label">
+          Industries
+          <div class="field-actions">
+            <button type="button" onclick="selectAllIndustries(true)">All</button>
+            <button type="button" onclick="selectAllIndustries(false)">None</button>
+          </div>
+        </div>
+        <div class="chk-scroll" style="max-height:180px">
+          <div class="chk-grid single" id="industries-grid"></div>
+        </div>
+        <div class="custom-row">
+          <input type="text" id="custom-industry-input"
+                 placeholder="Add custom search term..." />
+          <button type="button" onclick="addCustomIndustry()">+</button>
+        </div>
+        <div class="tags" id="custom-tags"></div>
+      </div>
+
+      <!-- Target & Quality -->
+      <div class="field">
+        <div class="field-label">Target qualifying leads</div>
+        <div class="range-row">
+          <input type="range" id="target-count" min="10" max="5000" step="10" value="25"
+                 oninput="document.getElementById('target-val').textContent=this.value" />
+          <span class="range-val" id="target-val">25</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          Quality requirements
+          <div class="field-actions">
+            <button type="button" onclick="clearQuality()">Clear</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.4rem">
+          <label class="chk-item">
+            <input type="checkbox" id="req-phone" />
+            <span>Phone number required</span>
+          </label>
+          <label class="chk-item">
+            <input type="checkbox" id="req-email" />
+            <span>Email address required</span>
+          </label>
+          <label class="chk-item">
+            <input type="checkbox" id="req-website" />
+            <span>Website required</span>
+          </label>
+        </div>
+        <div style="margin-top:.5rem">
+          <div class="field-label" style="font-size:.78rem">Max fetch rounds</div>
+          <div class="range-row">
+            <input type="range" id="max-rounds" min="1" max="5" step="1" value="3"
+                   oninput="document.getElementById('rounds-val').textContent=this.value" />
+            <span class="range-val" id="rounds-val">3</span>
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">
+            Each round doubles fetch size if target not reached
+          </div>
+          <div class="field-label" style="font-size:.78rem;margin-top:.6rem">
+            Website enrichment workers
+          </div>
+          <div class="range-row">
+            <input type="range" id="enrich-workers" min="1" max="20" step="1" value="5"
+                   oninput="document.getElementById('workers-val').textContent=this.value" />
+            <span class="range-val" id="workers-val">5</span>
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">
+            Parallel website requests (higher = faster, but may get blocked)
+          </div>
+        </div>
+      </div>
+
+      <!-- Sources -->
+      <div class="field">
+        <div class="field-label">Sources</div>
+        <div class="sources">
+          <label class="src-item" id="src-search_ch">
+            <input type="checkbox" id="chk-search_ch" checked /> search.ch
+          </label>
+          <label class="src-item" id="src-google_places">
+            <input type="checkbox" id="chk-google_places" /> Google Places
+          </label>
+          <label class="src-item" id="src-google_search">
+            <input type="checkbox" id="chk-google_search" /> Google Search
+          </label>
+          <label class="src-item" id="src-website_parser">
+            <input type="checkbox" id="chk-website_parser" checked /> Website Parser
+          </label>
+          <label class="src-item" id="src-firecrawl">
+            <input type="checkbox" id="chk-firecrawl" /> Firecrawl
+          </label>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="run-btn" onclick="runSearch()">&#128269; Run Search</button>
+      <button id="pause-btn" style="display:none;margin-top:.4rem;width:100%;padding:.5rem;
+              background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+              font-size:.875rem;font-weight:600;cursor:pointer">⏸ Pause</button>
+    </div>
+  </aside>
+
+  <!-- RIGHT: Results -->
+  <main>
+
+    <div class="card" id="progress-box">
+      <h2>Progress</h2>
+      <div id="log"></div>
+    </div>
+
+    <div class="card" id="metrics" style="margin-top:1rem">
+      <div class="metric-grid" style="grid-template-columns:repeat(5,1fr)">
+        <div class="metric"><div class="val" id="m-raw">&#8212;</div><div class="lbl">Raw records</div></div>
+        <div class="metric"><div class="val" id="m-unique">&#8212;</div><div class="lbl">Unique leads</div></div>
+        <div class="metric"><div class="val" id="m-qualified">&#8212;</div><div class="lbl">Qualified</div></div>
+        <div class="metric"><div class="val" id="m-phone">&#8212;</div><div class="lbl">With phone</div></div>
+        <div class="metric"><div class="val" id="m-email">&#8212;</div><div class="lbl">With email</div></div>
+      </div>
+      <div id="quality-bar-wrap" style="display:none;margin-top:.75rem">
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:.3rem">
+          Qualifying leads: <span id="qbar-label"></span>
+        </div>
+        <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden">
+          <div id="qbar-fill" style="height:100%;background:var(--primary);transition:width .4s;border-radius:4px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="stats-box" style="margin-top:1rem">
+      <h2>Source Comparison</h2>
+      <div class="tbl-wrap" id="stats-table"></div>
+    </div>
+
+    <div class="card" id="leads-box" style="margin-top:1rem">
+      <h2>Leads</h2>
+      <div class="table-toolbar">
+        <input type="text" id="search-filter" placeholder="Filter by company, city, email, phone&#8230;"
+               oninput="filterTable()" />
+        <span class="count-badge" id="count-badge"></span>
+      </div>
+      <div class="tbl-wrap">
+        <table id="leads-table">
+          <thead id="leads-thead"></thead>
+          <tbody id="leads-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="export-box" style="margin-top:1rem">
+      <h2>Export</h2>
+      <div class="export-btns">
+        <button class="btn-export" onclick="exportFile('excel')">&#128229; Download Excel</button>
+        <button class="btn-export" onclick="exportFile('csv')">&#128229; Download CSV</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  let currentJobId = null;
+  let allLeads = [];
+  let sortCol = null;
+  let sortDir = 1;
+  let customIndustries = []; // {label, term}
+
+  const VISIBLE_COLS = [
+    "company_name","industry","city","canton","phone","email",
+    "website","source","quality_score"
+  ];
+
+  // ── API Keys ──────────────────────────────────────────────────────────────────
+  function toggleEye(inputId, btn) {
+    const inp = document.getElementById(inputId);
+    inp.type = inp.type === "password" ? "text" : "password";
+    btn.textContent = inp.type === "password" ? "👁" : "🛃";
+  }
+
+  async function loadKeys() {
+    const keys = await fetch("/api/keys").then(r => r.json());
+    ["GOOGLE_API_KEY","SERP_API_KEY","TAVILY_API_KEY","FIRECRAWL_API_KEY"].forEach(k => {
+      const inp = document.getElementById("key-" + k);
+      if (inp && keys[k]) inp.value = keys[k];
+    });
+  }
+
+  function applyConfig(cfg) {
+    // Update dots
+    setDot("dot-google_places", cfg.google_places);
+    setDot("dot-google_search", cfg.google_search);
+    setDot("dot-tavily",
+      document.getElementById("key-TAVILY_API_KEY").value.trim().length > 0);
+    setDot("dot-firecrawl", cfg.firecrawl);
+    // Enable/disable source checkboxes
+    setSource("google_places", cfg.google_places);
+    setSource("google_search", cfg.google_search);
+    setSource("firecrawl", cfg.firecrawl);
+  }
+
+  function setDot(id, ok) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = "dot " + (ok ? "ok" : "no");
+  }
+
+  async function saveKeys() {
+    const body = {
+      GOOGLE_API_KEY:    document.getElementById("key-GOOGLE_API_KEY").value.trim(),
+      SERP_API_KEY:      document.getElementById("key-SERP_API_KEY").value.trim(),
+      TAVILY_API_KEY:    document.getElementById("key-TAVILY_API_KEY").value.trim(),
+      FIRECRAWL_API_KEY: document.getElementById("key-FIRECRAWL_API_KEY").value.trim(),
+    };
+    const msgEl = document.getElementById("save-msg");
+    msgEl.style.color = "var(--muted)";
+    msgEl.textContent = "Saving...";
+    try {
+      const cfg = await fetch("/api/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(r => r.json());
+      applyConfig(cfg);
+      msgEl.style.color = "var(--success)";
+      msgEl.textContent = "Saved and applied!";
+      setTimeout(() => { msgEl.textContent = ""; }, 3000);
+    } catch(e) {
+      msgEl.style.color = "var(--danger)";
+      msgEl.textContent = "Error: " + e.message;
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
+  async function init() {
+    const [cfg, cats] = await Promise.all([
+      fetch("/api/config").then(r => r.json()),
+      fetch("/api/categories").then(r => r.json()),
+    ]);
+
+    // Load keys into inputs and set dots
+    await loadKeys();
+
+    // Set initial dots from config
+    setDot("dot-google_places", cfg.google_places);
+    setDot("dot-google_search", cfg.google_search);
+    const tavilyVal = document.getElementById("key-TAVILY_API_KEY").value.trim();
+    setDot("dot-tavily", tavilyVal.length > 0);
+    setDot("dot-firecrawl", cfg.firecrawl);
+
+    setSource("google_places", cfg.google_places);
+    setSource("google_search", cfg.google_search);
+    setSource("firecrawl", cfg.firecrawl);
+
+    // Cities checkboxes — 2-column grid
+    const citiesGrid = document.getElementById("cities-grid");
+    cats.cities.forEach((city, i) => {
+      const lbl = document.createElement("label");
+      lbl.className = "chk-item";
+      lbl.innerHTML = `<input type="checkbox" name="city" value="${city}" ${i===0?'checked':''} /><span title="${city}">${city}</span>`;
+      citiesGrid.appendChild(lbl);
+    });
+
+    // Industries checkboxes — single column, first one pre-checked (Garages)
+    const indGrid = document.getElementById("industries-grid");
+    Object.entries(cats.industries).forEach(([display, term], i) => {
+      const lbl = document.createElement("label");
+      lbl.className = "chk-item";
+      lbl.innerHTML = `<input type="checkbox" name="industry" value="${term}" data-display="${display}" ${i===2?'checked':''} /><span title="${display}">${display}</span>`;
+      indGrid.appendChild(lbl);
+    });
+
+    // Enter key for custom industry input
+    document.getElementById("custom-industry-input").addEventListener("keydown", e => {
+      if (e.key === "Enter") addCustomIndustry();
+    });
+  }
+
+  function apiRow(name, ok) {
+    return `<div class="api-row"><div class="dot ${ok?"ok":"no"}"></div>${name}</div>`;
+  }
+
+  function setSource(id, available) {
+    const el = document.getElementById("src-" + id);
+    const chk = document.getElementById("chk-" + id);
+    if (!available) {
+      el.classList.add("disabled");
+      chk.disabled = true;
+      chk.checked = false;
+    } else {
+      chk.checked = true;
+    }
+  }
+
+  // ── City helpers ──────────────────────────────────────────────────────────────
+  function selectAllCities(state) {
+    document.querySelectorAll('#cities-grid input[type=checkbox]')
+      .forEach(c => c.checked = state);
+  }
+
+  function getSelectedCities() {
+    return [...document.querySelectorAll('#cities-grid input[type=checkbox]:checked')]
+      .map(c => c.value);
+  }
+
+  // ── Industry helpers ──────────────────────────────────────────────────────────
+  function selectAllIndustries(state) {
+    document.querySelectorAll('#industries-grid input[type=checkbox]')
+      .forEach(c => c.checked = state);
+  }
+
+  function getSelectedIndustries() {
+    const fromGrid = [...document.querySelectorAll('#industries-grid input[type=checkbox]:checked')]
+      .map(c => c.value);
+    const fromCustom = customIndustries.map(c => c.term);
+    return [...new Set([...fromGrid, ...fromCustom])];
+  }
+
+  function addCustomIndustry() {
+    const inp = document.getElementById("custom-industry-input");
+    const val = inp.value.trim();
+    if (!val) return;
+    if (customIndustries.some(c => c.term.toLowerCase() === val.toLowerCase())) {
+      inp.value = "";
+      return;
+    }
+    customIndustries.push({ label: val, term: val });
+    renderCustomTags();
+    inp.value = "";
+    inp.focus();
+  }
+
+  function removeCustomIndustry(term) {
+    customIndustries = customIndustries.filter(c => c.term !== term);
+    renderCustomTags();
+  }
+
+  function renderCustomTags() {
+    const container = document.getElementById("custom-tags");
+    container.innerHTML = customIndustries.map(c =>
+      `<span class="tag-custom">${c.label}<span class="rm" onclick="removeCustomIndustry('${c.term.replace(/'/g,"\\'")}')">&#215;</span></span>`
+    ).join("");
+  }
+
+  // ── Quality ───────────────────────────────────────────────────────────────────
+  function clearQuality() {
+    ["req-phone","req-email","req-website"].forEach(id =>
+      document.getElementById(id).checked = false
+    );
+  }
+
+  // ── Run search ────────────────────────────────────────────────────────────────
+  async function runSearch() {
+    const cities = getSelectedCities();
+    const categories = getSelectedIndustries();
+
+    if (!cities.length) { alert("Select at least one city."); return; }
+    if (!categories.length) { alert("Select at least one industry."); return; }
+
+    const params = {
+      cities,
+      categories,
+      target_count: parseInt(document.getElementById("target-count").value),
+      require_phone:   document.getElementById("req-phone").checked,
+      require_email:   document.getElementById("req-email").checked,
+      require_website: document.getElementById("req-website").checked,
+      max_rounds: parseInt(document.getElementById("max-rounds").value),
+      enrich_workers: parseInt(document.getElementById("enrich-workers").value),
+      enable_search_ch: document.getElementById("chk-search_ch").checked,
+      enable_google_places: document.getElementById("chk-google_places").checked,
+      enable_google_search: document.getElementById("chk-google_search").checked,
+      enable_website_parser: document.getElementById("chk-website_parser").checked,
+      enable_firecrawl: document.getElementById("chk-firecrawl").checked,
+    };
+
+    document.getElementById("run-btn").disabled = true;
+    document.getElementById("run-btn").textContent = "Running...";
+    document.getElementById("pause-btn").style.display = "inline-block";
+    document.getElementById("pause-btn").textContent = "⏸ Pause";
+    document.getElementById("pause-btn").onclick = () => pauseJob();
+    ["metrics","stats-box","leads-box","export-box"].forEach(id =>
+      document.getElementById(id).style.display = "none"
+    );
+
+    const logEl = document.getElementById("log");
+    logEl.textContent = "";
+    document.getElementById("progress-box").style.display = "block";
+
+    const { job_id } = await fetch("/api/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }).then(r => r.json());
+
+    currentJobId = job_id;
+
+    const es = new EventSource(`/api/progress/${job_id}`);
+    es.onmessage = async (e) => {
+      const data = JSON.parse(e.data);
+      if (data.msg) {
+        logEl.textContent += data.msg + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      if (data.paused) {
+        const line = document.createElement("div");
+        line.style.cssText = "color:#f59e0b;font-weight:700";
+        line.textContent = "⏸ PAUSED — click Resume to continue";
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        document.getElementById("pause-btn").textContent = "▶ Resume";
+        document.getElementById("pause-btn").onclick = () => resumeJob();
+        _sendNotification("Lead search paused", "Click Resume in the browser to continue.");
+      }
+      if (data.resumed) {
+        const line = document.createElement("div");
+        line.style.cssText = "color:#4ade80;font-weight:700";
+        line.textContent = "▶ Resumed";
+        logEl.appendChild(line);
+        document.getElementById("pause-btn").textContent = "⏸ Pause";
+        document.getElementById("pause-btn").onclick = () => pauseJob();
+      }
+      if (data.done) {
+        es.close();
+        document.getElementById("pause-btn").style.display = "none";
+        const line = document.createElement("div");
+        line.className = "done-line";
+        line.textContent = data.error
+          ? "Error: " + data.error
+          : `Complete — ${data.count} unique leads (saved to history)`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+
+        if (!data.error) {
+          await loadResults(job_id);
+          _sendNotification("Lead search complete", `Found ${data.count} leads. Results saved to history.`);
+        } else {
+          _sendNotification("Lead search error", data.error);
+        }
+
+        document.getElementById("run-btn").disabled = false;
+        document.getElementById("run-btn").textContent = "Run Search";
+      }
+      if (data.error && !data.done) {
+        logEl.textContent += "ERROR: " + data.error + "\n";
+      }
+    };
+    es.onerror = () => es.close();
+  }
+
+  // ── Load & render results ─────────────────────────────────────────────────────
+  async function loadResults(jobId) {
+    const data = await fetch(`/api/results/${jobId}`).then(r => r.json());
+
+    allLeads = data.leads;
+    document.getElementById("m-raw").textContent = data.raw_count;
+    document.getElementById("m-unique").textContent = data.leads.length;
+    document.getElementById("m-phone").textContent = data.leads.filter(l => l.phone).length;
+    document.getElementById("m-email").textContent = data.leads.filter(l => l.email).length;
+
+    // Qualified / target bar
+    const qCount = data.qualifying_count || data.leads.length;
+    const target = data.target_count || data.leads.length;
+    document.getElementById("m-qualified").textContent = `${qCount}/${target}`;
+    const pct = Math.min(100, Math.round(qCount / Math.max(target, 1) * 100));
+    const barWrap = document.getElementById("quality-bar-wrap");
+    const hasFilter = document.getElementById("req-phone").checked ||
+                      document.getElementById("req-email").checked ||
+                      document.getElementById("req-website").checked;
+    if (hasFilter) {
+      barWrap.style.display = "block";
+      document.getElementById("qbar-label").textContent = `${qCount} of ${target} (${pct}%)`;
+      document.getElementById("qbar-fill").style.width = pct + "%";
+      document.getElementById("qbar-fill").style.background =
+        pct >= 100 ? "var(--success)" : pct >= 50 ? "var(--primary)" : "var(--danger)";
+    } else {
+      barWrap.style.display = "none";
+    }
+
+    document.getElementById("metrics").style.display = "block";
+
+    renderStatsTable(data.stats);
+    document.getElementById("stats-box").style.display = "block";
+
+    renderLeadsTable(allLeads);
+    document.getElementById("leads-box").style.display = "block";
+    document.getElementById("export-box").style.display = "block";
+  }
+
+  function renderStatsTable(stats) {
+    const cols = ["source","records_collected","phones_found","phone_rate_%","emails_found","email_rate_%","average_quality_score"];
+    const labels = ["Source","Leads","Phones","Phone %","Emails","Email %","Avg Score"];
+    const html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr>${labels.map(l =>
+        `<th style="padding:.5rem .75rem;background:var(--bg);border-bottom:2px solid var(--border);text-align:left;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">${l}</th>`
+      ).join("")}</tr></thead>
+      <tbody>${stats.map(s =>
+        `<tr>${cols.map(c =>
+          `<td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">${s[c] !== undefined ? s[c] : "&#8212;"}</td>`
+        ).join("")}</tr>`
+      ).join("")}</tbody>
+    </table>`;
+    document.getElementById("stats-table").innerHTML = html;
+  }
+
+  function renderLeadsTable(leads) {
+    const thead = document.getElementById("leads-thead");
+    const tbody = document.getElementById("leads-tbody");
+
+    thead.innerHTML = `<tr>${VISIBLE_COLS.map(c => `
+      <th data-col="${c}" onclick="sortBy('${c}')" class="${sortCol===c?(sortDir>0?'asc':'desc'):''}">
+        ${c.replace(/_/g," ")} <span class="sort-icon"></span>
+      </th>`).join("")}</tr>`;
+
+    tbody.innerHTML = leads.map(lead => `<tr>${VISIBLE_COLS.map(c => {
+      const v = lead[c] !== undefined ? lead[c] : "";
+      if (c === "website" && v) return `<td><a href="${v}" target="_blank" rel="noopener">site</a></td>`;
+      if (c === "quality_score") return `<td><div class="score-bar"><div class="bar" style="width:${Math.min(v,80)}px"></div><span>${v}</span></div></td>`;
+      if (c === "source") {
+        const cls = v==="search.ch"?"tag-sch":v==="google_places"?"tag-gp":"tag-gs";
+        return `<td><span class="tag ${cls}">${v}</span></td>`;
+      }
+      return `<td>${v}</td>`;
+    }).join("")}</tr>`).join("");
+
+    updateCount(leads.length);
+  }
+
+  function filterTable() {
+    const q = document.getElementById("search-filter").value.toLowerCase();
+    if (!q) { renderLeadsTable(allLeads); return; }
+    const filtered = allLeads.filter(l =>
+      VISIBLE_COLS.some(c => String(l[c] !== undefined ? l[c] : "").toLowerCase().includes(q))
+    );
+    renderLeadsTable(filtered);
+  }
+
+  function sortBy(col) {
+    if (sortCol === col) sortDir *= -1;
+    else { sortCol = col; sortDir = 1; }
+    const q = document.getElementById("search-filter").value.toLowerCase();
+    let leads = q
+      ? allLeads.filter(l => VISIBLE_COLS.some(c => String(l[c] !== undefined ? l[c] : "").toLowerCase().includes(q)))
+      : [...allLeads];
+    leads.sort((a, b) => {
+      const av = a[col] !== undefined ? a[col] : "";
+      const bv = b[col] !== undefined ? b[col] : "";
+      return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
+    });
+    renderLeadsTable(leads);
+  }
+
+  function updateCount(n) {
+    document.getElementById("count-badge").textContent = `${n} of ${allLeads.length} leads`;
+  }
+
+  function exportFile(type) {
+    if (!currentJobId) return;
+    window.location.href = `/api/export/${currentJobId}/${type}`;
+  }
+
+  function scrollProgressIntoView() {
+    document.getElementById("progress-box")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+
+  async function pauseJob() {
+    if (!currentJobId) return;
+    const res = await fetch(`/api/jobs/${currentJobId}/pause`, { method: "POST" });
+    if (!res.ok) alert("Pause failed: " + await res.text());
+  }
+
+  async function resumeJob() {
+    if (!currentJobId) return;
+    const res = await fetch(`/api/jobs/${currentJobId}/resume`, { method: "POST" });
+    if (!res.ok) alert("Resume failed: " + await res.text());
+  }
+
+  function _sendNotification(title, body) {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      new Notification(title, { body });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then(p => {
+        if (p === "granted") new Notification(title, { body });
+      });
+    }
+  }
+
+  // Request notification permission proactively on first interaction
+  document.addEventListener("click", function _reqNotif() {
+    if (Notification.permission === "default") Notification.requestPermission();
+    document.removeEventListener("click", _reqNotif);
+  }, { once: true });
+
+  async function resumeFromHistory(jobId) {
+    const resumeRes = await fetch(`/api/history/${jobId}/resume`, { method: "POST" });
+    if (!resumeRes.ok) {
+      alert("Resume failed: " + await resumeRes.text());
+      return;
+    }
+    const resumed = await resumeRes.json();
+    currentJobId = resumed.job_id;
+    document.getElementById("run-btn").disabled = true;
+    document.getElementById("run-btn").textContent = "Running...";
+    document.getElementById("pause-btn").style.display = "inline-block";
+    document.getElementById("pause-btn").textContent = "⏸ Pause";
+    document.getElementById("pause-btn").onclick = () => pauseJob();
+    ["metrics","stats-box","leads-box","export-box"].forEach(id =>
+      document.getElementById(id).style.display = "none"
+    );
+    const logEl = document.getElementById("log");
+    logEl.textContent = "▶ Resuming search from saved checkpoint...\n";
+    document.getElementById("progress-box").style.display = "block";
+    scrollProgressIntoView();
+
+    const es = new EventSource(`/api/progress/${currentJobId}`);
+    es.onerror = () => {
+      logEl.textContent += "❌ SSE connection lost.\n";
+      logEl.scrollTop = logEl.scrollHeight;
+      es.close();
+      document.getElementById("run-btn").disabled = false;
+      document.getElementById("run-btn").textContent = "Run Search";
+      document.getElementById("pause-btn").style.display = "none";
+    };
+    es.onmessage = async (e) => {
+      const data = JSON.parse(e.data);
+      if (data.msg) {
+        logEl.textContent += data.msg + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      if (data.paused) {
+        const line = document.createElement("div");
+        line.style.cssText = "color:#f59e0b;font-weight:700";
+        line.textContent = "⏸ PAUSED — click Resume to continue";
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        document.getElementById("pause-btn").textContent = "▶ Resume";
+        document.getElementById("pause-btn").onclick = () => resumeJob();
+        _sendNotification("Lead search paused", "Click Resume in the browser to continue.");
+      }
+      if (data.resumed) {
+        const line = document.createElement("div");
+        line.style.cssText = "color:#4ade80;font-weight:700";
+        line.textContent = "▶ Resumed";
+        logEl.appendChild(line);
+        document.getElementById("pause-btn").textContent = "⏸ Pause";
+        document.getElementById("pause-btn").onclick = () => pauseJob();
+      }
+      if (data.done) {
+        es.close();
+        document.getElementById("pause-btn").style.display = "none";
+        const line = document.createElement("div");
+        line.className = "done-line";
+        line.textContent = data.error
+          ? "Error: " + data.error
+          : `Complete — ${data.count} unique leads (saved to history)`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        if (!data.error) {
+          await loadResults(currentJobId);
+          _sendNotification("Lead search complete", `Found ${data.count} leads. Results saved to history.`);
+        } else {
+          _sendNotification("Lead search error", data.error);
+        }
+        document.getElementById("run-btn").disabled = false;
+        document.getElementById("run-btn").textContent = "Run Search";
+      }
+    };
+  }
+
+  init().then(() => {
+    const params = new URLSearchParams(window.location.search);
+    const watch = params.get("watch");
+    const resume = params.get("resume");
+    if (watch) watchExistingJob(watch);
+    else if (resume) resumeFromHistory(resume);
+  });
+
+  function watchExistingJob(jobId) {
+    currentJobId = jobId;
+    document.getElementById("run-btn").disabled = true;
+    document.getElementById("run-btn").textContent = "Running...";
+    document.getElementById("pause-btn").style.display = "inline-block";
+    document.getElementById("pause-btn").textContent = "⏸ Pause";
+    document.getElementById("pause-btn").onclick = () => pauseJob();
+    ["metrics","stats-box","leads-box","export-box"].forEach(id =>
+      document.getElementById(id).style.display = "none"
+    );
+    const logEl = document.getElementById("log");
+    logEl.textContent = "🔗 Connecting to active search...\n";
+    document.getElementById("progress-box").style.display = "block";
+    scrollProgressIntoView();
+
+    const es = new EventSource(`/api/progress/${jobId}`);
+    es.onopen = () => {
+      logEl.textContent += "✅ Connected to event stream\n";
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    es.onerror = (err) => {
+      logEl.textContent += "❌ SSE connection lost. Search may have finished or server restarted.\n";
+      logEl.textContent += "→ Check history page for Resume.\n";
+      logEl.scrollTop = logEl.scrollHeight;
+      es.close();
+      document.getElementById("run-btn").disabled = false;
+      document.getElementById("run-btn").textContent = "Run Search";
+      document.getElementById("pause-btn").style.display = "none";
+    };
+    es.onmessage = async (e) => {
+      const data = JSON.parse(e.data);
+      if (data.error === "job not found") {
+        es.close();
+        logEl.textContent += "⚠️ Job not found — server was restarted.\n";
+        logEl.innerHTML += `<a href="/history" style="color:#2563eb;font-size:.9rem">→ Open history and click Resume</a>\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+        document.getElementById("run-btn").disabled = false;
+        document.getElementById("run-btn").textContent = "Run Search";
+        document.getElementById("pause-btn").style.display = "none";
+        return;
+      }
+      if (data.msg) {
+        logEl.textContent += data.msg + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      if (data.paused) {
+        const line = document.createElement("div");
+        line.style.cssText = "color:#f59e0b;font-weight:700";
+        line.textContent = "⏸ PAUSED — click Resume to continue";
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        document.getElementById("pause-btn").textContent = "▶ Resume";
+        document.getElementById("pause-btn").onclick = () => resumeJob();
+        _sendNotification("Search paused", "Click Resume in the browser to continue.");
+      }
+      if (data.resumed) {
+        const line = document.createElement("div");
+        line.style.cssText = "color:#4ade80;font-weight:700";
+        line.textContent = "▶ Resumed";
+        logEl.appendChild(line);
+        document.getElementById("pause-btn").textContent = "⏸ Pause";
+        document.getElementById("pause-btn").onclick = () => pauseJob();
+      }
+      if (data.done) {
+        es.close();
+        document.getElementById("pause-btn").style.display = "none";
+        const line = document.createElement("div");
+        line.className = "done-line";
+        line.textContent = data.error
+          ? "Error: " + data.error
+          : `Complete — ${data.count} leads`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        if (!data.error) {
+          await loadResults(jobId);
+          _sendNotification("Search complete", `Found ${data.count} leads.`);
+        } else {
+          _sendNotification("Search error", data.error);
+        }
+        document.getElementById("run-btn").disabled = false;
+        document.getElementById("run-btn").textContent = "Run Search";
+      }
+    };
+  }
+</script>
+</body>
+</html>

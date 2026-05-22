@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search History — Swiss B2B Lead Search</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f7fa; --surface: #fff; --border: #e2e6ea;
+      --primary: #2563eb; --primary-hover: #1d4ed8;
+      --text: #1a202c; --muted: #6b7280;
+      --success: #16a34a; --danger: #dc2626;
+      --warning: #d97706;
+      --radius: 8px; --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header { background: var(--surface); border-bottom: 1px solid var(--border);
+             padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+    header a { font-size: .875rem; color: var(--primary); text-decoration: none; }
+    header a:hover { text-decoration: underline; }
+    .header-right { margin-left: auto; display: flex; gap: .75rem; align-items: center; }
+
+    .page { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+
+    .toolbar { display: flex; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+    .count-info { font-size: .85rem; color: var(--muted); }
+
+    button { padding: .5rem 1rem; border: none; border-radius: var(--radius);
+             font-size: .875rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { background: var(--muted); cursor: not-allowed; }
+    .btn-danger { background: #fff; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: #fef2f2; }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-warning { background: #fff; color: var(--warning); border: 1px solid var(--warning); }
+    .btn-warning:hover { background: #fffbeb; }
+
+    .empty-state { text-align: center; padding: 4rem 1rem; color: var(--muted); }
+    .empty-state h2 { font-size: 1.25rem; margin-bottom: .5rem; }
+
+    .history-list { display: flex; flex-direction: column; gap: .75rem; }
+
+    .history-card { background: var(--surface); border: 1px solid var(--border);
+                    border-radius: var(--radius); box-shadow: var(--shadow);
+                    overflow: hidden; }
+    .history-card.selected { border-color: var(--primary);
+                              box-shadow: 0 0 0 2px rgba(37,99,235,.2); }
+    .history-card.interrupted { border-color: var(--warning); }
+
+    .card-header { display: flex; align-items: center; gap: .75rem; padding: .9rem 1rem;
+                   cursor: pointer; }
+    .card-header:hover { background: #f8fafc; }
+
+    .card-check { width: 16px; height: 16px; accent-color: var(--primary);
+                  flex-shrink: 0; cursor: pointer; }
+
+    .card-meta { flex: 1; min-width: 0; }
+    .card-title { font-weight: 600; font-size: .9rem; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: .5rem; }
+    .card-sub { font-size: .78rem; color: var(--muted); margin-top: .15rem; }
+
+    .status-badge { font-size: .7rem; font-weight: 700; padding: .15rem .4rem;
+                    border-radius: 4px; flex-shrink: 0; }
+    .badge-done { background: #dcfce7; color: #15803d; }
+    .badge-interrupted { background: #fef3c7; color: #b45309; }
+    .badge-error { background: #fee2e2; color: #b91c1c; }
+    .badge-running { background: #dbeafe; color: #1d4ed8; }
+
+    .card-stats { display: flex; gap: 1rem; flex-shrink: 0; }
+    .stat-pill { font-size: .78rem; text-align: center; }
+    .stat-pill .val { font-weight: 700; font-size: 1.1rem; color: var(--primary); }
+    .stat-pill .lbl { color: var(--muted); }
+
+    .card-actions { display: flex; gap: .4rem; flex-shrink: 0; }
+    .card-actions button { padding: .3rem .65rem; font-size: .78rem; font-weight: 500; }
+
+    .expand-icon { color: var(--muted); font-size: .75rem; flex-shrink: 0; transition: transform .2s; }
+    .expanded .expand-icon { transform: rotate(180deg); }
+
+    .card-detail { display: none; border-top: 1px solid var(--border);
+                   padding: 1rem; background: #fafbfc; }
+    .card-detail.open { display: block; }
+
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    @media (max-width: 600px) { .detail-grid { grid-template-columns: 1fr; } }
+
+    .detail-section h3 { font-size: .78rem; font-weight: 600; text-transform: uppercase;
+                         letter-spacing: .04em; color: var(--muted); margin-bottom: .5rem; }
+    .detail-kv { font-size: .82rem; display: flex; gap: .4rem; margin-bottom: .2rem; }
+    .detail-kv .dk { color: var(--muted); min-width: 90px; }
+
+    .mini-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .mini-table th { background: var(--bg); padding: .35rem .5rem; text-align: left;
+                     font-size: .72rem; text-transform: uppercase; color: var(--muted);
+                     border-bottom: 1px solid var(--border); }
+    .mini-table td { padding: .3rem .5rem; border-bottom: 1px solid var(--border); }
+
+    .select-row { display: flex; align-items: center; gap: .5rem; font-size: .85rem;
+                  margin-bottom: .5rem; color: var(--muted); }
+    .select-row input { accent-color: var(--primary); }
+
+    .interrupted-notice { background: #fffbeb; border: 1px solid #fde68a;
+                          border-radius: 6px; padding: .6rem .9rem; font-size: .82rem;
+                          color: #92400e; margin-bottom: .75rem; display: flex;
+                          align-items: center; gap: .5rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#128203; Search History</h1>
+  <a href="/">&#8592; Back to Search</a>
+  <div class="header-right">
+    <span id="sel-count" style="font-size:.85rem;color:var(--muted)"></span>
+    <button class="btn-primary" id="merge-btn" disabled onclick="mergeSelected()">
+      &#128229; Merge &amp; Export Selected
+    </button>
+    <button class="btn-danger" id="delete-btn" disabled onclick="deleteSelected()">
+      &#128465; Delete Selected
+    </button>
+  </div>
+</header>
+
+<div class="page">
+  <div id="loading" style="text-align:center;padding:3rem;color:var(--muted)">Loading...</div>
+  <div id="content" style="display:none">
+    <div class="toolbar">
+      <div class="select-row">
+        <input type="checkbox" id="chk-all" onchange="toggleAll(this.checked)" />
+        <label for="chk-all">Select all</label>
+      </div>
+      <span class="count-info" id="total-info"></span>
+    </div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+  <div id="empty" class="empty-state" style="display:none">
+    <h2>No search history yet</h2>
+    <p>Run a search to see results here</p>
+    <a href="/" style="display:inline-block;margin-top:1rem;color:var(--primary)">Go to Search</a>
+  </div>
+</div>
+
+<script>
+  let entries = [];
+  let selected = new Set();
+
+  async function load() {
+    try {
+      entries = await fetch("/api/history").then(r => r.json());
+    } catch(e) {
+      entries = [];
+    }
+    document.getElementById("loading").style.display = "none";
+    if (!entries.length) {
+      document.getElementById("empty").style.display = "block";
+      return;
+    }
+    document.getElementById("content").style.display = "block";
+    document.getElementById("total-info").textContent = `${entries.length} search${entries.length !== 1 ? "es" : ""} in history`;
+    renderList();
+  }
+
+  function renderList() {
+    const list = document.getElementById("history-list");
+    list.innerHTML = entries.map(e => cardHtml(e)).join("");
+  }
+
+  function statusBadge(status) {
+    const map = {
+      done: ['badge-done', 'Done'],
+      interrupted: ['badge-interrupted', '⚠ Interrupted'],
+      error: ['badge-error', 'Error'],
+      running: ['badge-running', 'Running'],
+      paused: ['badge-interrupted', 'Paused'],
+    };
+    const [cls, label] = map[status] || ['badge-done', status];
+    return `<span class="status-badge ${cls}">${label}</span>`;
+  }
+
+  function cardHtml(e) {
+    const dt = new Date(e.timestamp);
+    const dateStr = dt.toLocaleString("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+    const cities = (e.params.cities || []).join(", ") || "—";
+    const cats = (e.params.categories || []).join(", ") || "—";
+    const leadCount = e.summary.lead_count || 0;
+    const qualified = e.summary.qualifying_count || leadCount;
+    const rawCount = e.summary.raw_count || 0;
+    const status = e.status || "done";
+    const isInterrupted = status === "interrupted" || status === "error" || status === "paused";
+
+    const reqs = [];
+    if (e.params.require_email) reqs.push("email");
+    if (e.params.require_phone) reqs.push("phone");
+    if (e.params.require_website) reqs.push("website");
+    const reqStr = reqs.length ? reqs.join("+") : "none";
+
+    const statsRows = (e.stats || []).map(s =>
+      `<tr>
+        <td>${s.source}</td>
+        <td>${s.records_collected || 0}</td>
+        <td>${s.phones_found || 0} (${s["phone_rate_%"] || 0}%)</td>
+        <td>${s.emails_found || 0} (${s["email_rate_%"] || 0}%)</td>
+        <td>${s.average_quality_score || 0}</td>
+      </tr>`
+    ).join("");
+
+    const isSel = selected.has(e.id);
+
+    const isActive = isInterrupted || status === "running";
+    const resumeBtn = isActive
+      ? `<button class="btn-warning" onclick="resumeSearch('${e.id}')">${status === "running" ? "&#128250; Watch Live" : "&#9654; Resume"}</button>`
+      : "";
+
+    const interruptedNotice = isInterrupted
+      ? `<div class="interrupted-notice">&#9888; This search was interrupted. ${leadCount} leads were saved so far. Click Resume to continue.</div>`
+      : "";
+
+    return `
+    <div class="history-card ${isSel ? "selected" : ""} ${isInterrupted ? "interrupted" : ""}" id="card-${e.id}">
+      <div class="card-header" onclick="toggleExpand('${e.id}')">
+        <input type="checkbox" class="card-check" ${isSel ? "checked" : ""}
+               onclick="event.stopPropagation(); toggleSelect('${e.id}', this.checked)" />
+        <div class="card-meta">
+          <div class="card-title">${dateStr} &nbsp;|&nbsp; ${cities} ${statusBadge(status)}</div>
+          <div class="card-sub">${cats} &nbsp;&#183;&nbsp; Required: ${reqStr} &nbsp;&#183;&nbsp; Target: ${e.params.target_count || "?"}</div>
+        </div>
+        <div class="card-stats">
+          <div class="stat-pill"><div class="val">${leadCount}</div><div class="lbl">leads</div></div>
+          <div class="stat-pill"><div class="val">${qualified}</div><div class="lbl">qualified</div></div>
+          <div class="stat-pill"><div class="val">${rawCount}</div><div class="lbl">raw</div></div>
+        </div>
+        <div class="card-actions" onclick="event.stopPropagation()">
+          ${resumeBtn}
+          <button class="btn-secondary" onclick="exportSingle('${e.id}')">&#128229; Export</button>
+          <button class="btn-danger" onclick="deleteSingle('${e.id}')">&#128465;</button>
+        </div>
+        <div class="expand-icon" id="exp-${e.id}">&#9660;</div>
+      </div>
+      <div class="card-detail" id="detail-${e.id}">
+        ${interruptedNotice}
+        <div class="detail-grid">
+          <div class="detail-section">
+            <h3>Search Parameters</h3>
+            <div class="detail-kv"><span class="dk">Cities:</span> ${cities}</div>
+            <div class="detail-kv"><span class="dk">Industries:</span> ${cats}</div>
+            <div class="detail-kv"><span class="dk">Target:</span> ${e.params.target_count || "?"} leads</div>
+            <div class="detail-kv"><span class="dk">Required:</span> ${reqStr}</div>
+            <div class="detail-kv"><span class="dk">Rounds:</span> ${e.params.max_rounds || "?"}</div>
+          </div>
+          <div class="detail-section">
+            <h3>Results Summary</h3>
+            <div class="detail-kv"><span class="dk">Status:</span> ${status}</div>
+            <div class="detail-kv"><span class="dk">Raw collected:</span> ${rawCount}</div>
+            <div class="detail-kv"><span class="dk">Qualifying:</span> ${qualified}</div>
+            <div class="detail-kv"><span class="dk">Final leads:</span> ${leadCount}</div>
+          </div>
+        </div>
+        ${statsRows ? `
+        <div class="detail-section">
+          <h3>Source Breakdown</h3>
+          <table class="mini-table">
+            <thead><tr><th>Source</th><th>Leads</th><th>Phone</th><th>Email</th><th>Avg Score</th></tr></thead>
+            <tbody>${statsRows}</tbody>
+          </table>
+        </div>` : ""}
+      </div>
+    </div>`;
+  }
+
+  function toggleExpand(id) {
+    const detail = document.getElementById(`detail-${id}`);
+    const header = document.querySelector(`#card-${id} .card-header`);
+    detail.classList.toggle("open");
+    header.classList.toggle("expanded");
+  }
+
+  function toggleSelect(id, checked) {
+    if (checked) selected.add(id);
+    else selected.delete(id);
+    const card = document.getElementById(`card-${id}`);
+    card.classList.toggle("selected", checked);
+    updateToolbar();
+  }
+
+  function toggleAll(checked) {
+    entries.forEach(e => {
+      if (checked) selected.add(e.id);
+      else selected.delete(e.id);
+    });
+    document.querySelectorAll(".card-check").forEach(c => c.checked = checked);
+    document.querySelectorAll(".history-card").forEach(c =>
+      c.classList.toggle("selected", checked)
+    );
+    updateToolbar();
+  }
+
+  function updateToolbar() {
+    const n = selected.size;
+    document.getElementById("sel-count").textContent = n ? `${n} selected` : "";
+    document.getElementById("merge-btn").disabled = n < 1;
+    document.getElementById("delete-btn").disabled = n < 1;
+  }
+
+  async function mergeSelected() {
+    if (!selected.size) return;
+    const ids = [...selected];
+    const res = await fetch("/api/history/merge-export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) { alert("Merge failed: " + await res.text()); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `merged_${ids.length}_searches.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportSingle(id) {
+    const res = await fetch("/api/history/merge-export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [id] }),
+    });
+    if (!res.ok) { alert("Export failed"); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `leads_${id}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function resumeSearch(id) {
+    const res = await fetch(`/api/history/${id}/resume`, { method: "POST" });
+    if (!res.ok) { alert("Не удалось: " + await res.text()); return; }
+    const data = await res.json();
+    window.location.href = `/?watch=${data.job_id}`;
+  }
+
+  async function deleteSingle(id) {
+    if (!confirm("Delete this search history entry?")) return;
+    await fetch(`/api/history/${id}`, { method: "DELETE" });
+    entries = entries.filter(e => e.id !== id);
+    selected.delete(id);
+    if (!entries.length) {
+      document.getElementById("content").style.display = "none";
+      document.getElementById("empty").style.display = "block";
+    } else {
+      renderList();
+    }
+    updateToolbar();
+  }
+
+  async function deleteSelected() {
+    if (!selected.size) return;
+    if (!confirm(`Delete ${selected.size} history entries?`)) return;
+    const ids = [...selected];
+    await Promise.all(ids.map(id => fetch(`/api/history/${id}`, { method: "DELETE" })));
+    entries = entries.filter(e => !ids.includes(e.id));
+    selected.clear();
+    if (!entries.length) {
+      document.getElementById("content").style.display = "none";
+      document.getElementById("empty").style.display = "block";
+    } else {
+      renderList();
+    }
+    updateToolbar();
+  }
+
+  load();
+</script>
+</body>
+</html>
