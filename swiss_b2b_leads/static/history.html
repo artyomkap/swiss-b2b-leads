@@ -109,6 +109,9 @@
                           border-radius: 6px; padding: .6rem .9rem; font-size: .82rem;
                           color: #92400e; margin-bottom: .75rem; display: flex;
                           align-items: center; gap: .5rem; }
+    .api-warning { background: #fef2f2; border: 1px solid #fca5a5;
+                   border-radius: 6px; padding: .55rem .75rem; font-size: .8rem;
+                   color: #991b1b; margin-bottom: .75rem; }
   </style>
 </head>
 <body>
@@ -189,7 +192,10 @@
       day: "2-digit", month: "short", year: "numeric",
       hour: "2-digit", minute: "2-digit"
     });
-    const cities = (e.params.cities || []).join(", ") || "—";
+    const locations = e.location_summary ||
+      (e.locations || []).map(l => l.input_label).join(", ") ||
+      (e.params.cities || []).join(", ") || "—";
+    const expandedCount = (e.locations || []).reduce((sum, l) => sum + (l.expanded_count || 0), 0);
     const cats = (e.params.categories || []).join(", ") || "—";
     const leadCount = e.summary.lead_count || 0;
     const qualified = e.summary.qualifying_count || leadCount;
@@ -223,6 +229,12 @@
     const interruptedNotice = isInterrupted
       ? `<div class="interrupted-notice">&#9888; This search was interrupted. ${leadCount} leads were saved so far. Click Resume to continue.</div>`
       : "";
+    const apiWarnings = (e.api_events || []).filter(ev =>
+      ["quota_exceeded","rate_limited","invalid_key"].includes(ev.event_type)
+    );
+    const apiWarningHtml = apiWarnings.length
+      ? `<div class="api-warning">API warnings: ${apiWarnings.map(ev => `${ev.provider}: ${ev.event_type}`).join(", ")}</div>`
+      : "";
 
     return `
     <div class="history-card ${isSel ? "selected" : ""} ${isInterrupted ? "interrupted" : ""}" id="card-${e.id}">
@@ -230,8 +242,8 @@
         <input type="checkbox" class="card-check" ${isSel ? "checked" : ""}
                onclick="event.stopPropagation(); toggleSelect('${e.id}', this.checked)" />
         <div class="card-meta">
-          <div class="card-title">${dateStr} &nbsp;|&nbsp; ${cities} ${statusBadge(status)}</div>
-          <div class="card-sub">${cats} &nbsp;&#183;&nbsp; Required: ${reqStr} &nbsp;&#183;&nbsp; Target: ${e.params.target_count || "?"}</div>
+          <div class="card-title">${dateStr} &nbsp;|&nbsp; ${locations} ${statusBadge(status)}</div>
+          <div class="card-sub">${cats} &nbsp;&#183;&nbsp; Required: ${reqStr} &nbsp;&#183;&nbsp; Target: ${e.params.target_count || "?"} &nbsp;&#183;&nbsp; Est. queries: ${e.estimated_queries || 0}</div>
         </div>
         <div class="card-stats">
           <div class="stat-pill"><div class="val">${leadCount}</div><div class="lbl">leads</div></div>
@@ -247,14 +259,17 @@
       </div>
       <div class="card-detail" id="detail-${e.id}">
         ${interruptedNotice}
+        ${apiWarningHtml}
         <div class="detail-grid">
           <div class="detail-section">
             <h3>Search Parameters</h3>
-            <div class="detail-kv"><span class="dk">Cities:</span> ${cities}</div>
+            <div class="detail-kv"><span class="dk">Locations:</span> ${locations}</div>
+            <div class="detail-kv"><span class="dk">Expanded:</span> ${expandedCount || (e.params.expanded_locations || []).length || "—"} terms</div>
             <div class="detail-kv"><span class="dk">Industries:</span> ${cats}</div>
             <div class="detail-kv"><span class="dk">Target:</span> ${e.params.target_count || "?"} leads</div>
             <div class="detail-kv"><span class="dk">Required:</span> ${reqStr}</div>
             <div class="detail-kv"><span class="dk">Rounds:</span> ${e.params.max_rounds || "?"}</div>
+            <div class="detail-kv"><span class="dk">Cost level:</span> ${e.cost_warning_level || "low"}</div>
           </div>
           <div class="detail-section">
             <h3>Results Summary</h3>
@@ -262,6 +277,7 @@
             <div class="detail-kv"><span class="dk">Raw collected:</span> ${rawCount}</div>
             <div class="detail-kv"><span class="dk">Qualifying:</span> ${qualified}</div>
             <div class="detail-kv"><span class="dk">Final leads:</span> ${leadCount}</div>
+            <div class="detail-kv"><span class="dk">API warnings:</span> ${e.api_limit_warnings_count || 0}</div>
           </div>
         </div>
         ${statsRows ? `

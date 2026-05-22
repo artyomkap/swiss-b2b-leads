@@ -80,6 +80,41 @@
     .tag-custom .rm { cursor: pointer; font-size: .9rem; line-height: 1; opacity: .6; }
     .tag-custom .rm:hover { opacity: 1; }
 
+    /* Locations */
+    .location-box { position: relative; }
+    .location-search-row { display: flex; gap: .4rem; }
+    .location-search-row input, .location-search-row select {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: .45rem .6rem; font-size: .82rem; outline: none; background: #fff;
+    }
+    .location-search-row input { flex: 1; min-width: 0; }
+    .location-search-row select { width: 118px; }
+    .location-search-row input:focus, .location-search-row select:focus {
+      border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.15);
+    }
+    .suggestions { display: none; position: absolute; z-index: 20; left: 0; right: 0; top: 2.3rem;
+                   max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid var(--border);
+                   border-radius: var(--radius); box-shadow: var(--shadow); }
+    .suggestion { padding: .45rem .6rem; font-size: .8rem; cursor: pointer;
+                  display: flex; justify-content: space-between; gap: .5rem; }
+    .suggestion:hover { background: #eff6ff; }
+    .suggestion small { color: var(--muted); text-transform: uppercase; font-size: .68rem; }
+    .location-chip { display: inline-flex; align-items: center; gap: .35rem; max-width: 100%;
+                     padding: .25rem .55rem; border-radius: 999px; font-size: .75rem;
+                     background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; }
+    .location-chip .mode { color: #0369a1; opacity: .75; }
+    .location-chip .rm { cursor: pointer; font-size: .9rem; line-height: 1; opacity: .65; }
+    .location-chip .rm:hover { opacity: 1; }
+    .estimate-box { display: none; margin: .75rem 0 1rem; padding: .7rem;
+                    border: 1px solid var(--border); border-radius: var(--radius); background: #f8fafc;
+                    font-size: .8rem; color: var(--text); }
+    .estimate-box.high, .estimate-box.blocked { background: #fffbeb; border-color: #fbbf24; }
+    .estimate-box.blocked { background: #fef2f2; border-color: #fca5a5; }
+    .estimate-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem .75rem; }
+    .estimate-actions { margin-top: .55rem; display: flex; flex-direction: column; gap: .35rem; color: var(--muted); }
+    .estimate-actions label { display: flex; gap: .4rem; align-items: flex-start; }
+    .estimate-actions input { margin-top: .15rem; accent-color: var(--primary); }
+
     /* Range */
     .range-row { display: flex; align-items: center; gap: .75rem; }
     .range-row input[type=range] { flex: 1; accent-color: var(--primary); }
@@ -124,6 +159,10 @@
 
     /* Progress */
     #progress-box { display: none; }
+    .api-alert { display: none; margin-bottom: .75rem; padding: .65rem .8rem;
+                 border-radius: var(--radius); background: #fffbeb; border: 1px solid #fbbf24;
+                 color: #92400e; font-size: .82rem; }
+    .api-alert.critical { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
     #log { background: #0f172a; color: #94a3b8; font-family: monospace; font-size: .78rem;
            padding: 1rem; border-radius: var(--radius); height: 220px; overflow-y: auto;
            white-space: pre-wrap; word-break: break-all; }
@@ -235,18 +274,27 @@
 
       <h2 style="margin-top:.75rem">Search Parameters</h2>
 
-      <!-- Cities -->
+      <!-- Locations -->
       <div class="field">
         <div class="field-label">
-          Cities
+          Locations
           <div class="field-actions">
-            <button type="button" onclick="selectAllCities(true)">All</button>
-            <button type="button" onclick="selectAllCities(false)">None</button>
+            <button type="button" onclick="addDefaultLocation()">Zurich</button>
+            <button type="button" onclick="clearLocations()">Clear</button>
           </div>
         </div>
-        <div class="chk-scroll">
-          <div class="chk-grid" id="cities-grid"></div>
+        <div class="location-box">
+          <div class="location-search-row">
+            <input type="text" id="location-input" placeholder="Search city, canton, region or custom area..." autocomplete="off" />
+            <select id="coverage-mode" title="Coverage mode">
+              <option value="top_cities">Top cities</option>
+              <option value="area_query">Area query</option>
+              <option value="all_available_cities">All cities</option>
+            </select>
+          </div>
+          <div class="suggestions" id="location-suggestions"></div>
         </div>
+        <div class="tags" id="location-tags"></div>
       </div>
 
       <!-- Industries -->
@@ -347,6 +395,7 @@
       </div>
 
       <button class="btn-primary" id="run-btn" onclick="runSearch()">&#128269; Run Search</button>
+      <div class="estimate-box" id="estimate-box"></div>
       <button id="pause-btn" style="display:none;margin-top:.4rem;width:100%;padding:.5rem;
               background:#fff;border:1px solid var(--border);border-radius:var(--radius);
               font-size:.875rem;font-weight:600;cursor:pointer">⏸ Pause</button>
@@ -358,6 +407,7 @@
 
     <div class="card" id="progress-box">
       <h2>Progress</h2>
+      <div class="api-alert" id="api-alert"></div>
       <div id="log"></div>
     </div>
 
@@ -415,18 +465,30 @@
   let allLeads = [];
   let sortCol = null;
   let sortDir = 1;
-  let customIndustries = []; // {label, term}
+  let customIndustries = [];
+  let selectedLocations = [];
+  let estimateTimer = null;
+  let lastEstimate = null;
 
   const VISIBLE_COLS = [
     "company_name","industry","city","canton","phone","email",
     "website","source","quality_score"
   ];
 
-  // ── API Keys ──────────────────────────────────────────────────────────────────
+  function providerAvailable(cfg, key) {
+    const value = cfg[key];
+    return typeof value === "object" ? !!value.available : !!value;
+  }
+
+  function providerStatus(cfg, key) {
+    const value = cfg[key];
+    return typeof value === "object" ? (value.status || "ok") : (value ? "ok" : "missing");
+  }
+
   function toggleEye(inputId, btn) {
     const inp = document.getElementById(inputId);
     inp.type = inp.type === "password" ? "text" : "password";
-    btn.textContent = inp.type === "password" ? "👁" : "🛃";
+    btn.textContent = inp.type === "password" ? "👁" : "🙈";
   }
 
   async function loadKeys() {
@@ -437,23 +499,22 @@
     });
   }
 
-  function applyConfig(cfg) {
-    // Update dots
-    setDot("dot-google_places", cfg.google_places);
-    setDot("dot-google_search", cfg.google_search);
-    setDot("dot-tavily",
-      document.getElementById("key-TAVILY_API_KEY").value.trim().length > 0);
-    setDot("dot-firecrawl", cfg.firecrawl);
-    // Enable/disable source checkboxes
-    setSource("google_places", cfg.google_places);
-    setSource("google_search", cfg.google_search);
-    setSource("firecrawl", cfg.firecrawl);
-  }
-
-  function setDot(id, ok) {
+  function setDotStatus(id, available, status = "ok", title = "") {
     const el = document.getElementById(id);
     if (!el) return;
+    const ok = available && status === "ok";
     el.className = "dot " + (ok ? "ok" : "no");
+    el.title = title || status;
+  }
+
+  function applyConfig(cfg) {
+    setDotStatus("dot-google_places", providerAvailable(cfg, "google_places"), providerStatus(cfg, "google_places"), cfg.google_places?.last_error_msg);
+    setDotStatus("dot-google_search", providerAvailable(cfg, "google_search"), providerStatus(cfg, "google_search"), cfg.google_search?.last_error_msg);
+    setDotStatus("dot-tavily", providerAvailable(cfg, "tavily"), providerStatus(cfg, "tavily"), cfg.tavily?.last_error_msg);
+    setDotStatus("dot-firecrawl", providerAvailable(cfg, "firecrawl"), providerStatus(cfg, "firecrawl"), cfg.firecrawl?.last_error_msg);
+    setSource("google_places", providerAvailable(cfg, "google_places"));
+    setSource("google_search", providerAvailable(cfg, "google_search"));
+    setSource("firecrawl", providerAvailable(cfg, "firecrawl"));
   }
 
   async function saveKeys() {
@@ -482,37 +543,14 @@
     }
   }
 
-  // ── Init ─────────────────────────────────────────────────────────────────────
   async function init() {
     const [cfg, cats] = await Promise.all([
       fetch("/api/config").then(r => r.json()),
       fetch("/api/categories").then(r => r.json()),
     ]);
-
-    // Load keys into inputs and set dots
     await loadKeys();
+    applyConfig(cfg);
 
-    // Set initial dots from config
-    setDot("dot-google_places", cfg.google_places);
-    setDot("dot-google_search", cfg.google_search);
-    const tavilyVal = document.getElementById("key-TAVILY_API_KEY").value.trim();
-    setDot("dot-tavily", tavilyVal.length > 0);
-    setDot("dot-firecrawl", cfg.firecrawl);
-
-    setSource("google_places", cfg.google_places);
-    setSource("google_search", cfg.google_search);
-    setSource("firecrawl", cfg.firecrawl);
-
-    // Cities checkboxes — 2-column grid
-    const citiesGrid = document.getElementById("cities-grid");
-    cats.cities.forEach((city, i) => {
-      const lbl = document.createElement("label");
-      lbl.className = "chk-item";
-      lbl.innerHTML = `<input type="checkbox" name="city" value="${city}" ${i===0?'checked':''} /><span title="${city}">${city}</span>`;
-      citiesGrid.appendChild(lbl);
-    });
-
-    // Industries checkboxes — single column, first one pre-checked (Garages)
     const indGrid = document.getElementById("industries-grid");
     Object.entries(cats.industries).forEach(([display, term], i) => {
       const lbl = document.createElement("label");
@@ -521,14 +559,16 @@
       indGrid.appendChild(lbl);
     });
 
-    // Enter key for custom industry input
     document.getElementById("custom-industry-input").addEventListener("keydown", e => {
       if (e.key === "Enter") addCustomIndustry();
     });
-  }
-
-  function apiRow(name, ok) {
-    return `<div class="api-row"><div class="dot ${ok?"ok":"no"}"></div>${name}</div>`;
+    document.getElementById("location-input").addEventListener("input", onLocationInput);
+    document.getElementById("location-input").addEventListener("keydown", onLocationKeydown);
+    document.getElementById("coverage-mode").addEventListener("change", refreshEstimateSoon);
+    document.addEventListener("click", e => {
+      if (!e.target.closest(".location-box")) hideSuggestions();
+    });
+    addDefaultLocation();
   }
 
   function setSource(id, available) {
@@ -539,25 +579,91 @@
       chk.disabled = true;
       chk.checked = false;
     } else {
+      el.classList.remove("disabled");
+      chk.disabled = false;
       chk.checked = true;
     }
   }
 
-  // ── City helpers ──────────────────────────────────────────────────────────────
-  function selectAllCities(state) {
-    document.querySelectorAll('#cities-grid input[type=checkbox]')
-      .forEach(c => c.checked = state);
+  function addDefaultLocation() {
+    addLocation({ type: "city", value: "Zurich", label: "Zurich", coverage_mode: "top_cities" });
   }
 
-  function getSelectedCities() {
-    return [...document.querySelectorAll('#cities-grid input[type=checkbox]:checked')]
-      .map(c => c.value);
+  async function onLocationInput(e) {
+    const q = e.target.value.trim();
+    if (!q) { hideSuggestions(); return; }
+    const data = await fetch(`/api/locations/search?q=${encodeURIComponent(q)}`).then(r => r.json());
+    renderSuggestions(data.items || [], q);
   }
 
-  // ── Industry helpers ──────────────────────────────────────────────────────────
+  function onLocationKeydown(e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const inp = document.getElementById("location-input");
+    const first = document.querySelector(".suggestion");
+    if (first && first.dataset.payload) {
+      addLocation(JSON.parse(first.dataset.payload));
+    } else if (inp.value.trim()) {
+      addLocation({ type: "custom", value: inp.value.trim(), label: inp.value.trim(), coverage_mode: "area_query" });
+    }
+  }
+
+  function renderSuggestions(items, q) {
+    const box = document.getElementById("location-suggestions");
+    const mode = document.getElementById("coverage-mode").value;
+    const rows = items.map(item => {
+      const payload = { type: item.type, value: item.value, label: item.label, coverage_mode: mode };
+      return `<div class="suggestion" data-payload='${JSON.stringify(payload).replace(/'/g, "&#39;")}' onclick="addLocation(JSON.parse(this.dataset.payload))">
+        <span>${item.label}</span><small>${item.type}</small>
+      </div>`;
+    });
+    rows.push(`<div class="suggestion" data-payload='${JSON.stringify({type:"custom", value:q, label:q, coverage_mode:"area_query"}).replace(/'/g, "&#39;")}' onclick="addLocation(JSON.parse(this.dataset.payload))">
+      <span>Use custom area: ${q}</span><small>custom</small>
+    </div>`);
+    box.innerHTML = rows.join("");
+    box.style.display = "block";
+  }
+
+  function hideSuggestions() {
+    document.getElementById("location-suggestions").style.display = "none";
+  }
+
+  function addLocation(loc) {
+    if (!loc.label) loc.label = loc.value;
+    if (!loc.coverage_mode) loc.coverage_mode = document.getElementById("coverage-mode").value || "top_cities";
+    const key = `${loc.type}:${loc.value}:${loc.coverage_mode}`.toLowerCase();
+    if (!selectedLocations.some(l => `${l.type}:${l.value}:${l.coverage_mode}`.toLowerCase() === key)) {
+      selectedLocations.push(loc);
+    }
+    document.getElementById("location-input").value = "";
+    hideSuggestions();
+    renderLocations();
+    refreshEstimateSoon();
+  }
+
+  function removeLocation(i) {
+    selectedLocations.splice(i, 1);
+    renderLocations();
+    refreshEstimateSoon();
+  }
+
+  function clearLocations() {
+    selectedLocations = [];
+    renderLocations();
+    refreshEstimateSoon();
+  }
+
+  function renderLocations() {
+    const container = document.getElementById("location-tags");
+    container.innerHTML = selectedLocations.map((loc, i) =>
+      `<span class="location-chip">${loc.label}<span class="mode">${loc.coverage_mode.replace(/_/g, " ")}</span><span class="rm" onclick="removeLocation(${i})">&#215;</span></span>`
+    ).join("");
+  }
+
   function selectAllIndustries(state) {
     document.querySelectorAll('#industries-grid input[type=checkbox]')
       .forEach(c => c.checked = state);
+    refreshEstimateSoon();
   }
 
   function getSelectedIndustries() {
@@ -571,19 +677,19 @@
     const inp = document.getElementById("custom-industry-input");
     const val = inp.value.trim();
     if (!val) return;
-    if (customIndustries.some(c => c.term.toLowerCase() === val.toLowerCase())) {
-      inp.value = "";
-      return;
+    if (!customIndustries.some(c => c.term.toLowerCase() === val.toLowerCase())) {
+      customIndustries.push({ label: val, term: val });
     }
-    customIndustries.push({ label: val, term: val });
     renderCustomTags();
     inp.value = "";
     inp.focus();
+    refreshEstimateSoon();
   }
 
   function removeCustomIndustry(term) {
     customIndustries = customIndustries.filter(c => c.term !== term);
     renderCustomTags();
+    refreshEstimateSoon();
   }
 
   function renderCustomTags() {
@@ -593,24 +699,16 @@
     ).join("");
   }
 
-  // ── Quality ───────────────────────────────────────────────────────────────────
   function clearQuality() {
     ["req-phone","req-email","req-website"].forEach(id =>
       document.getElementById(id).checked = false
     );
   }
 
-  // ── Run search ────────────────────────────────────────────────────────────────
-  async function runSearch() {
-    const cities = getSelectedCities();
-    const categories = getSelectedIndustries();
-
-    if (!cities.length) { alert("Select at least one city."); return; }
-    if (!categories.length) { alert("Select at least one industry."); return; }
-
-    const params = {
-      cities,
-      categories,
+  function buildParams() {
+    return {
+      locations: selectedLocations,
+      categories: getSelectedIndustries(),
       target_count: parseInt(document.getElementById("target-count").value),
       require_phone:   document.getElementById("req-phone").checked,
       require_email:   document.getElementById("req-email").checked,
@@ -622,8 +720,75 @@
       enable_google_search: document.getElementById("chk-google_search").checked,
       enable_website_parser: document.getElementById("chk-website_parser").checked,
       enable_firecrawl: document.getElementById("chk-firecrawl").checked,
+      cost_confirmation: !!document.getElementById("cost-confirm")?.checked,
+      cost_override: !!document.getElementById("cost-override")?.checked,
     };
+  }
 
+  function refreshEstimateSoon() {
+    clearTimeout(estimateTimer);
+    estimateTimer = setTimeout(refreshEstimate, 250);
+  }
+
+  async function refreshEstimate() {
+    const params = buildParams();
+    const box = document.getElementById("estimate-box");
+    if (!params.locations.length || !params.categories.length) {
+      box.style.display = "none";
+      return null;
+    }
+    const confirmed = !!document.getElementById("cost-confirm")?.checked;
+    const override = !!document.getElementById("cost-override")?.checked;
+    lastEstimate = await fetch("/api/search/estimate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }).then(r => r.json());
+    renderEstimate(lastEstimate);
+    if (document.getElementById("cost-confirm")) document.getElementById("cost-confirm").checked = confirmed;
+    if (document.getElementById("cost-override")) document.getElementById("cost-override").checked = override;
+    return lastEstimate;
+  }
+
+  function renderEstimate(est) {
+    const box = document.getElementById("estimate-box");
+    box.className = `estimate-box ${est.warning_level}`;
+    box.style.display = "block";
+    const warn = est.warning_level === "blocked"
+      ? "This search is above the default safety limit."
+      : est.warning_level === "high"
+        ? "This search may use many API credits."
+        : "";
+    box.innerHTML = `
+      <div class="estimate-grid">
+        <div><b>Locations:</b> ${est.expanded_locations_count}</div>
+        <div><b>Categories:</b> ${est.categories_count}</div>
+        <div><b>Source queries:</b> ${est.estimated_queries}</div>
+        <div><b>API calls approx:</b> ${est.estimated_api_calls}</div>
+      </div>
+      ${warn ? `<div style="margin-top:.45rem;color:#92400e">${warn}</div>` : ""}
+      <div class="estimate-actions">
+        ${est.warning_level === "high" || est.warning_level === "blocked"
+          ? `<label><input type="checkbox" id="cost-confirm" /> I understand this may use API credits.</label>` : ""}
+        ${est.warning_level === "blocked"
+          ? `<label><input type="checkbox" id="cost-override" /> Override blocked limit for this run.</label>` : ""}
+      </div>`;
+  }
+
+  async function runSearch() {
+    if (!selectedLocations.length) { alert("Select at least one location."); return; }
+    if (!getSelectedIndustries().length) { alert("Select at least one industry."); return; }
+    const est = await refreshEstimate();
+    if (est?.warning_level === "high" && !document.getElementById("cost-confirm")?.checked) {
+      alert("Please confirm API credit usage before running this search.");
+      return;
+    }
+    if (est?.warning_level === "blocked" && (!document.getElementById("cost-confirm")?.checked || !document.getElementById("cost-override")?.checked)) {
+      alert("This search is blocked by safety limits. Reduce scope or enable the override checkbox.");
+      return;
+    }
+
+    const params = buildParams();
     document.getElementById("run-btn").disabled = true;
     document.getElementById("run-btn").textContent = "Running...";
     document.getElementById("pause-btn").style.display = "inline-block";
@@ -632,22 +797,52 @@
     ["metrics","stats-box","leads-box","export-box"].forEach(id =>
       document.getElementById(id).style.display = "none"
     );
+    document.getElementById("api-alert").style.display = "none";
 
     const logEl = document.getElementById("log");
     logEl.textContent = "";
     document.getElementById("progress-box").style.display = "block";
 
-    const { job_id } = await fetch("/api/search", {
+    const res = await fetch("/api/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
-    }).then(r => r.json());
-
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(async () => ({ detail: await res.text() }));
+      alert(err.detail?.message || err.detail || "Search failed");
+      document.getElementById("run-btn").disabled = false;
+      document.getElementById("run-btn").textContent = "Run Search";
+      document.getElementById("pause-btn").style.display = "none";
+      return;
+    }
+    const { job_id } = await res.json();
     currentJobId = job_id;
+    attachProgressStream(job_id, "Lead search");
+  }
 
-    const es = new EventSource(`/api/progress/${job_id}`);
+  function appendApiAlert(data) {
+    const alertEl = document.getElementById("api-alert");
+    alertEl.className = "api-alert " + (data.severity === "critical" ? "critical" : "");
+    alertEl.style.display = "block";
+    alertEl.textContent = `${data.provider}: ${data.event_type || "API warning"} - ${data.message || ""}`;
+    _sendNotification("API source warning", alertEl.textContent);
+  }
+
+  function attachProgressStream(jobId, notificationPrefix) {
+    const logEl = document.getElementById("log");
+    const es = new EventSource(`/api/progress/${jobId}`);
     es.onmessage = async (e) => {
       const data = JSON.parse(e.data);
+      if (data.error === "job not found") {
+        es.close();
+        logEl.textContent += "⚠️ Job not found — server was restarted.\n";
+        document.getElementById("run-btn").disabled = false;
+        document.getElementById("run-btn").textContent = "Run Search";
+        document.getElementById("pause-btn").style.display = "none";
+        return;
+      }
+      if (data.api_limit || data.source_disabled) appendApiAlert(data);
       if (data.msg) {
         logEl.textContent += data.msg + "\n";
         logEl.scrollTop = logEl.scrollHeight;
@@ -657,10 +852,9 @@
         line.style.cssText = "color:#f59e0b;font-weight:700";
         line.textContent = "⏸ PAUSED — click Resume to continue";
         logEl.appendChild(line);
-        logEl.scrollTop = logEl.scrollHeight;
         document.getElementById("pause-btn").textContent = "▶ Resume";
         document.getElementById("pause-btn").onclick = () => resumeJob();
-        _sendNotification("Lead search paused", "Click Resume in the browser to continue.");
+        _sendNotification(`${notificationPrefix} paused`, "Click Resume in the browser to continue.");
       }
       if (data.resumed) {
         const line = document.createElement("div");
@@ -675,40 +869,36 @@
         document.getElementById("pause-btn").style.display = "none";
         const line = document.createElement("div");
         line.className = "done-line";
-        line.textContent = data.error
-          ? "Error: " + data.error
-          : `Complete — ${data.count} unique leads (saved to history)`;
+        line.textContent = data.error ? "Error: " + data.error : `Complete — ${data.count} unique leads (saved to history)`;
         logEl.appendChild(line);
         logEl.scrollTop = logEl.scrollHeight;
-
         if (!data.error) {
-          await loadResults(job_id);
-          _sendNotification("Lead search complete", `Found ${data.count} leads. Results saved to history.`);
+          await loadResults(jobId);
+          _sendNotification(`${notificationPrefix} complete`, `Found ${data.count} leads.`);
+          refreshApiStatus();
         } else {
-          _sendNotification("Lead search error", data.error);
+          _sendNotification(`${notificationPrefix} error`, data.error);
         }
-
         document.getElementById("run-btn").disabled = false;
         document.getElementById("run-btn").textContent = "Run Search";
-      }
-      if (data.error && !data.done) {
-        logEl.textContent += "ERROR: " + data.error + "\n";
       }
     };
     es.onerror = () => es.close();
   }
 
-  // ── Load & render results ─────────────────────────────────────────────────────
+  async function refreshApiStatus() {
+    const cfg = await fetch("/api/api-status").then(r => r.json());
+    applyConfig(cfg);
+  }
+
   async function loadResults(jobId) {
     const data = await fetch(`/api/results/${jobId}`).then(r => r.json());
-
     allLeads = data.leads;
     document.getElementById("m-raw").textContent = data.raw_count;
     document.getElementById("m-unique").textContent = data.leads.length;
     document.getElementById("m-phone").textContent = data.leads.filter(l => l.phone).length;
     document.getElementById("m-email").textContent = data.leads.filter(l => l.email).length;
 
-    // Qualified / target bar
     const qCount = data.qualifying_count || data.leads.length;
     const target = data.target_count || data.leads.length;
     document.getElementById("m-qualified").textContent = `${qCount}/${target}`;
@@ -726,12 +916,9 @@
     } else {
       barWrap.style.display = "none";
     }
-
     document.getElementById("metrics").style.display = "block";
-
     renderStatsTable(data.stats);
     document.getElementById("stats-box").style.display = "block";
-
     renderLeadsTable(allLeads);
     document.getElementById("leads-box").style.display = "block";
     document.getElementById("export-box").style.display = "block";
@@ -756,12 +943,10 @@
   function renderLeadsTable(leads) {
     const thead = document.getElementById("leads-thead");
     const tbody = document.getElementById("leads-tbody");
-
     thead.innerHTML = `<tr>${VISIBLE_COLS.map(c => `
       <th data-col="${c}" onclick="sortBy('${c}')" class="${sortCol===c?(sortDir>0?'asc':'desc'):''}">
         ${c.replace(/_/g," ")} <span class="sort-icon"></span>
       </th>`).join("")}</tr>`;
-
     tbody.innerHTML = leads.map(lead => `<tr>${VISIBLE_COLS.map(c => {
       const v = lead[c] !== undefined ? lead[c] : "";
       if (c === "website" && v) return `<td><a href="${v}" target="_blank" rel="noopener">site</a></td>`;
@@ -772,17 +957,15 @@
       }
       return `<td>${v}</td>`;
     }).join("")}</tr>`).join("");
-
     updateCount(leads.length);
   }
 
   function filterTable() {
     const q = document.getElementById("search-filter").value.toLowerCase();
     if (!q) { renderLeadsTable(allLeads); return; }
-    const filtered = allLeads.filter(l =>
+    renderLeadsTable(allLeads.filter(l =>
       VISIBLE_COLS.some(c => String(l[c] !== undefined ? l[c] : "").toLowerCase().includes(q))
-    );
-    renderLeadsTable(filtered);
+    ));
   }
 
   function sortBy(col) {
@@ -810,10 +993,7 @@
   }
 
   function scrollProgressIntoView() {
-    document.getElementById("progress-box")?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+    document.getElementById("progress-box")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function pauseJob() {
@@ -839,7 +1019,6 @@
     }
   }
 
-  // Request notification permission proactively on first interaction
   document.addEventListener("click", function _reqNotif() {
     if (Notification.permission === "default") Notification.requestPermission();
     document.removeEventListener("click", _reqNotif);
@@ -865,69 +1044,8 @@
     logEl.textContent = "▶ Resuming search from saved checkpoint...\n";
     document.getElementById("progress-box").style.display = "block";
     scrollProgressIntoView();
-
-    const es = new EventSource(`/api/progress/${currentJobId}`);
-    es.onerror = () => {
-      logEl.textContent += "❌ SSE connection lost.\n";
-      logEl.scrollTop = logEl.scrollHeight;
-      es.close();
-      document.getElementById("run-btn").disabled = false;
-      document.getElementById("run-btn").textContent = "Run Search";
-      document.getElementById("pause-btn").style.display = "none";
-    };
-    es.onmessage = async (e) => {
-      const data = JSON.parse(e.data);
-      if (data.msg) {
-        logEl.textContent += data.msg + "\n";
-        logEl.scrollTop = logEl.scrollHeight;
-      }
-      if (data.paused) {
-        const line = document.createElement("div");
-        line.style.cssText = "color:#f59e0b;font-weight:700";
-        line.textContent = "⏸ PAUSED — click Resume to continue";
-        logEl.appendChild(line);
-        logEl.scrollTop = logEl.scrollHeight;
-        document.getElementById("pause-btn").textContent = "▶ Resume";
-        document.getElementById("pause-btn").onclick = () => resumeJob();
-        _sendNotification("Lead search paused", "Click Resume in the browser to continue.");
-      }
-      if (data.resumed) {
-        const line = document.createElement("div");
-        line.style.cssText = "color:#4ade80;font-weight:700";
-        line.textContent = "▶ Resumed";
-        logEl.appendChild(line);
-        document.getElementById("pause-btn").textContent = "⏸ Pause";
-        document.getElementById("pause-btn").onclick = () => pauseJob();
-      }
-      if (data.done) {
-        es.close();
-        document.getElementById("pause-btn").style.display = "none";
-        const line = document.createElement("div");
-        line.className = "done-line";
-        line.textContent = data.error
-          ? "Error: " + data.error
-          : `Complete — ${data.count} unique leads (saved to history)`;
-        logEl.appendChild(line);
-        logEl.scrollTop = logEl.scrollHeight;
-        if (!data.error) {
-          await loadResults(currentJobId);
-          _sendNotification("Lead search complete", `Found ${data.count} leads. Results saved to history.`);
-        } else {
-          _sendNotification("Lead search error", data.error);
-        }
-        document.getElementById("run-btn").disabled = false;
-        document.getElementById("run-btn").textContent = "Run Search";
-      }
-    };
+    attachProgressStream(currentJobId, "Lead search");
   }
-
-  init().then(() => {
-    const params = new URLSearchParams(window.location.search);
-    const watch = params.get("watch");
-    const resume = params.get("resume");
-    if (watch) watchExistingJob(watch);
-    else if (resume) resumeFromHistory(resume);
-  });
 
   function watchExistingJob(jobId) {
     currentJobId = jobId;
@@ -943,76 +1061,22 @@
     logEl.textContent = "🔗 Connecting to active search...\n";
     document.getElementById("progress-box").style.display = "block";
     scrollProgressIntoView();
-
-    const es = new EventSource(`/api/progress/${jobId}`);
-    es.onopen = () => {
-      logEl.textContent += "✅ Connected to event stream\n";
-      logEl.scrollTop = logEl.scrollHeight;
-    };
-    es.onerror = (err) => {
-      logEl.textContent += "❌ SSE connection lost. Search may have finished or server restarted.\n";
-      logEl.textContent += "→ Check history page for Resume.\n";
-      logEl.scrollTop = logEl.scrollHeight;
-      es.close();
-      document.getElementById("run-btn").disabled = false;
-      document.getElementById("run-btn").textContent = "Run Search";
-      document.getElementById("pause-btn").style.display = "none";
-    };
-    es.onmessage = async (e) => {
-      const data = JSON.parse(e.data);
-      if (data.error === "job not found") {
-        es.close();
-        logEl.textContent += "⚠️ Job not found — server was restarted.\n";
-        logEl.innerHTML += `<a href="/history" style="color:#2563eb;font-size:.9rem">→ Open history and click Resume</a>\n`;
-        logEl.scrollTop = logEl.scrollHeight;
-        document.getElementById("run-btn").disabled = false;
-        document.getElementById("run-btn").textContent = "Run Search";
-        document.getElementById("pause-btn").style.display = "none";
-        return;
-      }
-      if (data.msg) {
-        logEl.textContent += data.msg + "\n";
-        logEl.scrollTop = logEl.scrollHeight;
-      }
-      if (data.paused) {
-        const line = document.createElement("div");
-        line.style.cssText = "color:#f59e0b;font-weight:700";
-        line.textContent = "⏸ PAUSED — click Resume to continue";
-        logEl.appendChild(line);
-        logEl.scrollTop = logEl.scrollHeight;
-        document.getElementById("pause-btn").textContent = "▶ Resume";
-        document.getElementById("pause-btn").onclick = () => resumeJob();
-        _sendNotification("Search paused", "Click Resume in the browser to continue.");
-      }
-      if (data.resumed) {
-        const line = document.createElement("div");
-        line.style.cssText = "color:#4ade80;font-weight:700";
-        line.textContent = "▶ Resumed";
-        logEl.appendChild(line);
-        document.getElementById("pause-btn").textContent = "⏸ Pause";
-        document.getElementById("pause-btn").onclick = () => pauseJob();
-      }
-      if (data.done) {
-        es.close();
-        document.getElementById("pause-btn").style.display = "none";
-        const line = document.createElement("div");
-        line.className = "done-line";
-        line.textContent = data.error
-          ? "Error: " + data.error
-          : `Complete — ${data.count} leads`;
-        logEl.appendChild(line);
-        logEl.scrollTop = logEl.scrollHeight;
-        if (!data.error) {
-          await loadResults(jobId);
-          _sendNotification("Search complete", `Found ${data.count} leads.`);
-        } else {
-          _sendNotification("Search error", data.error);
-        }
-        document.getElementById("run-btn").disabled = false;
-        document.getElementById("run-btn").textContent = "Run Search";
-      }
-    };
+    attachProgressStream(jobId, "Search");
   }
+
+  document.addEventListener("change", e => {
+    if (e.target.matches('input[name="industry"], #target-count, #max-rounds, #chk-search_ch, #chk-google_places, #chk-google_search, #chk-firecrawl')) {
+      refreshEstimateSoon();
+    }
+  });
+
+  init().then(() => {
+    const params = new URLSearchParams(window.location.search);
+    const watch = params.get("watch");
+    const resume = params.get("resume");
+    if (watch) watchExistingJob(watch);
+    else if (resume) resumeFromHistory(resume);
+  });
 </script>
 </body>
 </html>

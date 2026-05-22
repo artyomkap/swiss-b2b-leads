@@ -4,6 +4,7 @@ import requests
 from typing import List
 from models import Lead
 from config import Config
+from api_limits import ProviderLimitError, classify_api_error
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", re.IGNORECASE)
 PHONE_RE = re.compile(
@@ -25,7 +26,18 @@ def enrich_lead(lead: Lead) -> Lead:
                 timeout=30,
             )
             data = resp.json()
+            if resp.status_code >= 400:
+                event_type = classify_api_error(resp.text, resp.status_code)
+                raise ProviderLimitError(
+                    "firecrawl",
+                    resp.text[:300],
+                    event_type=event_type,
+                    status_code=resp.status_code,
+                )
             if not data.get("success"):
+                event_type = classify_api_error(str(data))
+                if event_type != "unknown_error":
+                    raise ProviderLimitError("firecrawl", str(data)[:300], event_type=event_type)
                 continue
             content = data.get("data", {}).get("markdown", "")
             if not lead.email:
@@ -39,6 +51,8 @@ def enrich_lead(lead: Lead) -> Lead:
             if lead.email and lead.phone:
                 break
             time.sleep(0.5)
+        except ProviderLimitError:
+            raise
         except Exception as e:
             print(f"[firecrawl] Error for {url}: {e}")
     return lead

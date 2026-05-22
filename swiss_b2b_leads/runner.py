@@ -16,6 +16,7 @@ from processing.deduplicate import deduplicate
 from processing.quality_score import calculate_quality_score
 from processing.summary import compute_source_stats
 from sources.website_parser import enrich_lead as _ws_enrich_lead
+from api_limits import ApiLimitEvent, ProviderLimitError, classify_api_error, missing_key_event
 
 _WS_HEADERS = {
     "User-Agent": (
@@ -43,12 +44,6 @@ def _meets_quality(lead: Lead, require_email: bool, require_phone: bool, require
     if require_website and not lead.website:
         return False
     return True
-
-
-def _is_api_limit_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(k in msg for k in ["429", "quota", "rate limit", "too many", "resource_exhausted",
-                                   "credits", "no credits", "limit exceeded"])
 
 
 def _check_pause(
@@ -134,27 +129,37 @@ def _collect_sources(
     pause_event: Optional[threading.Event],
     resume_event: Optional[threading.Event],
     status_callback: Optional[Callable],
+    api_event_callback: Optional[Callable[[dict], None]],
 ) -> Dict[str, List[Lead]]:
     raw: Dict[str, List[Lead]] = {}
+
+    def emit_event(event: dict) -> None:
+        if api_event_callback:
+            api_event_callback(event)
 
     def _try_collect(name: str, fn: Callable) -> List[Lead]:
         try:
             results = fn()
             return results
+        except ProviderLimitError as exc:
+            event = exc.event.to_dict()
+            emit_event(event)
+            log(f"⚠️ [{name}] {event['event_type']}: {event['message']}")
+            return []
         except Exception as exc:
-            if _is_api_limit_error(exc):
-                log(f"⚠️ [{name}] API limit detected: {exc}")
-                if pause_event:
-                    pause_event.set()
-                _check_pause(pause_event, resume_event, status_callback, log)
-                try:
-                    return fn()
-                except Exception as exc2:
-                    log(f"[{name}] Still failing after resume: {exc2}")
-                    return []
-            else:
-                log(f"[{name}] Error: {exc}")
+            event_type = classify_api_error(str(exc))
+            if event_type != "unknown_error":
+                event = ApiLimitEvent(
+                    provider=name,
+                    event_type=event_type,
+                    message=str(exc),
+                    action_taken="source_disabled",
+                ).to_dict()
+                emit_event(event)
+                log(f"⚠️ [{name}] {event_type}: {exc}")
                 return []
+            log(f"[{name}] Error: {exc}")
+            return []
 
     if enable_search_ch:
         log(f"Collecting from search.ch (up to {max_results}) ...")
@@ -166,19 +171,27 @@ def _collect_sources(
         if Config.GOOGLE_API_KEY:
             log(f"Collecting from Google Places (up to {max_results}) ...")
             from sources.google_places import collect as gp
-            raw["google_places"] = _try_collect("google_places", lambda: gp(cities, categories, max_results, log=log))
+            raw["google_places"] = _try_collect(
+                "google_places",
+                lambda: gp(cities, categories, max_results, log=log, event_callback=emit_event),
+            )
             _check_pause(pause_event, resume_event, status_callback, log)
         else:
             log("Google Places skipped — no API key")
+            emit_event(missing_key_event("google_places").to_dict())
 
     if enable_google_search:
         if Config.SERP_API_KEY or Config.TAVILY_API_KEY:
             log(f"Collecting from Google Search (up to {max_results}) ...")
             from sources.google_search import collect as gs
-            raw["google_search"] = _try_collect("google_search", lambda: gs(cities, categories, max_results, log=log))
+            raw["google_search"] = _try_collect(
+                "google_search",
+                lambda: gs(cities, categories, max_results, log=log, event_callback=emit_event),
+            )
             _check_pause(pause_event, resume_event, status_callback, log)
         else:
             log("Google Search skipped — no API key")
+            emit_event(missing_key_event("google_search").to_dict())
 
     return raw
 
@@ -194,8 +207,10 @@ def _process_all(
     pause_event: Optional[threading.Event],
     resume_event: Optional[threading.Event],
     status_callback: Optional[Callable],
+    api_event_callback: Optional[Callable[[dict], None]],
 ) -> Dict[str, List[Lead]]:
     clean_by_source: Dict[str, List[Lead]] = {}
+    firecrawl_disabled = False
 
     for src, raw_leads in all_raw_by_source.items():
         leads = [normalize_lead(l) for l in raw_leads]
@@ -212,19 +227,34 @@ def _process_all(
             )
             _check_pause(pause_event, resume_event, status_callback, log)
 
-        if enable_firecrawl and Config.FIRECRAWL_API_KEY:
+        if enable_firecrawl and Config.FIRECRAWL_API_KEY and not firecrawl_disabled:
             from sources.firecrawl_parser import enrich_lead as fc_enrich
             to_fc = [l for l in leads if l.website and extract_domain(l.website) not in visited_domains]
             for i, lead in enumerate(to_fc):
                 log(f"[{src}] Firecrawl {i+1}/{len(to_fc)}: {lead.website}")
                 try:
                     fc_enrich(lead)
+                except ProviderLimitError as exc:
+                    firecrawl_disabled = True
+                    event = exc.event.to_dict()
+                    if api_event_callback:
+                        api_event_callback(event)
+                    log(f"⚠️ Firecrawl {event['event_type']}: {event['message']}")
+                    break
                 except Exception as exc:
-                    if _is_api_limit_error(exc):
-                        log(f"⚠️ Firecrawl API limit: {exc}")
-                        if pause_event:
-                            pause_event.set()
-                        _check_pause(pause_event, resume_event, status_callback, log)
+                    event_type = classify_api_error(str(exc))
+                    if event_type != "unknown_error":
+                        firecrawl_disabled = True
+                        event = ApiLimitEvent(
+                            provider="firecrawl",
+                            event_type=event_type,
+                            message=str(exc),
+                            action_taken="source_disabled",
+                        ).to_dict()
+                        if api_event_callback:
+                            api_event_callback(event)
+                        log(f"⚠️ Firecrawl {event_type}: {exc}")
+                        break
                 d = extract_domain(lead.website)
                 if d:
                     visited_domains.add(d)
@@ -259,6 +289,7 @@ def run_search(
     resume_event: Optional[threading.Event] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
     status_callback: Optional[Callable[[str], None]] = None,
+    api_event_callback: Optional[Callable[[dict], None]] = None,
     lead_writer=None,
     prior_visited_domains: Optional[Set[str]] = None,
 ) -> Dict:
@@ -273,6 +304,13 @@ def run_search(
     def log(msg: str) -> None:
         if progress_callback:
             progress_callback(msg)
+
+    api_events: List[dict] = []
+
+    def emit_api_event(event: dict) -> None:
+        api_events.append(event)
+        if api_event_callback:
+            api_event_callback(event)
 
     criteria = [f for f, v in [("email", require_email), ("phone", require_phone), ("website", require_website)] if v]
     log(f"Target: {target_count} leads | Required fields: {', '.join(criteria) or 'none'} | "
@@ -296,7 +334,7 @@ def run_search(
         raw_this_round = _collect_sources(
             cities, categories, per_round,
             enable_search_ch, enable_google_places, enable_google_search,
-            log, pause_event, resume_event, status_callback,
+            log, pause_event, resume_event, status_callback, emit_api_event,
         )
 
         for src, new_leads in raw_this_round.items():
@@ -320,7 +358,7 @@ def run_search(
             all_raw_by_source, visited_domains,
             enable_website_parser, enable_firecrawl, enrich_workers,
             log, lead_writer,
-            pause_event, resume_event, status_callback,
+            pause_event, resume_event, status_callback, emit_api_event,
         )
 
         all_clean = [l for leads in clean_by_source.values() for l in leads]
@@ -350,4 +388,5 @@ def run_search(
         "final": final_qualifying[:target_count],
         "target_count": target_count,
         "qualifying_count": len(final_qualifying),
+        "api_events": api_events,
     }

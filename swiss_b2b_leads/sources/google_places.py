@@ -4,6 +4,7 @@ import requests
 from typing import List, Callable, Optional
 from models import Lead
 from config import Config
+from api_limits import ApiLimitEvent, classify_api_error, missing_key_event
 
 TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 FIELD_MASK = (
@@ -18,6 +19,7 @@ def collect(
     categories: List[str],
     max_results: int = 50,
     log: Optional[Callable] = None,
+    event_callback: Optional[Callable[[dict], None]] = None,
 ) -> List[Lead]:
     def _log(msg: str) -> None:
         if log:
@@ -25,6 +27,8 @@ def collect(
 
     if not Config.GOOGLE_API_KEY:
         _log("[google_places] No API key. Skipping.")
+        if event_callback:
+            event_callback(missing_key_event("google_places").to_dict())
         return []
     all_leads: List[Lead] = []
 
@@ -60,7 +64,19 @@ def collect(
                     )
                     data = resp.json()
                     if "error" in data:
-                        _log(f"[google_places] Error: {data['error'].get('message', data['error'])}")
+                        message = data["error"].get("message", data["error"])
+                        event_type = classify_api_error(str(message), resp.status_code)
+                        _log(f"[google_places] Error: {message}")
+                        if event_callback:
+                            event_callback(ApiLimitEvent(
+                                provider="google_places",
+                                event_type=event_type,
+                                message=str(message),
+                                status_code=resp.status_code,
+                                error_code=data["error"].get("status", ""),
+                                severity="critical" if event_type in {"quota_exceeded", "invalid_key"} else "warning",
+                                action_taken="source_disabled" if event_type in {"quota_exceeded", "rate_limited", "invalid_key"} else "recorded",
+                            ).to_dict())
                         break
                     places = data.get("places", [])
                     if not places:
@@ -74,7 +90,15 @@ def collect(
                         break
                     time.sleep(2)
                 except Exception as e:
+                    event_type = classify_api_error(str(e))
                     _log(f"[google_places] Error: {e}")
+                    if event_callback and event_type != "unknown_error":
+                        event_callback(ApiLimitEvent(
+                            provider="google_places",
+                            event_type=event_type,
+                            message=str(e),
+                            action_taken="source_disabled",
+                        ).to_dict())
                     break
 
     _log(f"[google_places] Done: {len(all_leads)} leads collected")

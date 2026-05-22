@@ -4,6 +4,7 @@ import queue
 import sqlite3
 import threading
 import time
+from datetime import datetime
 from typing import List, Optional
 
 from models import Lead
@@ -81,8 +82,60 @@ def init() -> None:
             email_rate    REAL DEFAULT 0,
             average_quality_score REAL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS search_locations (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            search_id   TEXT NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+            input_type  TEXT DEFAULT '',
+            input_value TEXT DEFAULT '',
+            input_label TEXT DEFAULT '',
+            coverage_mode TEXT DEFAULT '',
+            expanded_terms_json TEXT DEFAULT '[]',
+            expanded_count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS api_key_status (
+            provider    TEXT PRIMARY KEY,
+            status      TEXT NOT NULL DEFAULT 'ok',
+            last_error_msg TEXT DEFAULT '',
+            last_status_code INTEGER,
+            last_checked_at TEXT DEFAULT '',
+            blocked_until TEXT DEFAULT '',
+            failures_count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS api_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            search_id   TEXT DEFAULT '',
+            provider    TEXT DEFAULT '',
+            event_type  TEXT DEFAULT '',
+            status_code INTEGER,
+            error_code  TEXT DEFAULT '',
+            message     TEXT DEFAULT '',
+            detected_at TEXT DEFAULT '',
+            action_taken TEXT DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_search_locations_search ON search_locations(search_id);
+        CREATE INDEX IF NOT EXISTS idx_api_events_search ON api_events(search_id);
+        CREATE INDEX IF NOT EXISTS idx_api_events_provider ON api_events(provider);
     """)
+    _ensure_search_columns(c)
     c.commit()
+
+
+def _ensure_search_columns(c: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in c.execute("PRAGMA table_info(searches)").fetchall()}
+    columns = {
+        "location_summary": "TEXT DEFAULT ''",
+        "estimated_queries": "INTEGER DEFAULT 0",
+        "estimated_api_calls": "INTEGER DEFAULT 0",
+        "cost_warning_level": "TEXT DEFAULT 'low'",
+        "api_limit_warnings_count": "INTEGER DEFAULT 0",
+    }
+    for name, ddl in columns.items():
+        if name not in existing:
+            c.execute(f"ALTER TABLE searches ADD COLUMN {name} {ddl}")
 
 
 def mark_interrupted() -> None:
@@ -91,12 +144,55 @@ def mark_interrupted() -> None:
     c.commit()
 
 
-def create_search(search_id: str, timestamp: str, params: dict, target_count: int) -> None:
+def create_search(
+    search_id: str,
+    timestamp: str,
+    params: dict,
+    target_count: int,
+    estimate: Optional[dict] = None,
+) -> None:
+    estimate = estimate or {}
     c = _conn()
     c.execute(
-        "INSERT OR REPLACE INTO searches (id, timestamp, status, params, target_count) VALUES (?,?,?,?,?)",
-        (search_id, timestamp, "running", json.dumps(params, ensure_ascii=False), target_count),
+        """INSERT OR REPLACE INTO searches (
+            id, timestamp, status, params, target_count, location_summary,
+            estimated_queries, estimated_api_calls, cost_warning_level
+        ) VALUES (?,?,?,?,?,?,?,?,?)""",
+        (
+            search_id,
+            timestamp,
+            "running",
+            json.dumps(params, ensure_ascii=False),
+            target_count,
+            estimate.get("location_summary", ""),
+            estimate.get("estimated_queries", 0),
+            estimate.get("estimated_api_calls", 0),
+            estimate.get("warning_level", "low"),
+        ),
     )
+    c.commit()
+
+
+def save_search_locations(search_id: str, locations: list, expanded_locations: list) -> None:
+    c = _conn()
+    c.execute("DELETE FROM search_locations WHERE search_id=?", (search_id,))
+    for loc in locations:
+        expanded = loc.get("expanded_terms") or expanded_locations
+        c.execute(
+            """INSERT INTO search_locations (
+                search_id, input_type, input_value, input_label, coverage_mode,
+                expanded_terms_json, expanded_count
+            ) VALUES (?,?,?,?,?,?,?)""",
+            (
+                search_id,
+                loc.get("type", ""),
+                loc.get("value", ""),
+                loc.get("label", ""),
+                loc.get("coverage_mode", ""),
+                json.dumps(expanded, ensure_ascii=False),
+                len(expanded),
+            ),
+        )
     c.commit()
 
 
@@ -131,6 +227,99 @@ def upsert_stats(search_id: str, stats: list) -> None:
     c.commit()
 
 
+def record_api_event(search_id: str, event: dict) -> None:
+    c = _conn()
+    detected_at = event.get("detected_at") or datetime.now().isoformat()
+    c.execute(
+        """INSERT INTO api_events (
+            search_id, provider, event_type, status_code, error_code,
+            message, detected_at, action_taken
+        ) VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            search_id,
+            event.get("provider", ""),
+            event.get("event_type", ""),
+            event.get("status_code"),
+            event.get("error_code", ""),
+            event.get("message", ""),
+            detected_at,
+            event.get("action_taken", ""),
+        ),
+    )
+    if event.get("event_type") in {"quota_exceeded", "rate_limited", "invalid_key", "unknown_error", "missing"}:
+        upsert_api_key_status(
+            event.get("provider", ""),
+            event.get("event_type", "unknown_error"),
+            event.get("message", ""),
+            event.get("status_code"),
+        )
+    count = c.execute(
+        "SELECT COUNT(*) AS n FROM api_events WHERE search_id=? AND event_type IN ('quota_exceeded','rate_limited','invalid_key')",
+        (search_id,),
+    ).fetchone()["n"]
+    c.execute("UPDATE searches SET api_limit_warnings_count=? WHERE id=?", (count, search_id))
+    c.commit()
+
+
+def upsert_api_key_status(
+    provider: str,
+    status: str,
+    last_error_msg: str = "",
+    last_status_code: Optional[int] = None,
+    blocked_until: str = "",
+) -> None:
+    if not provider:
+        return
+    c = _conn()
+    now = datetime.now().isoformat()
+    existing = c.execute(
+        "SELECT failures_count FROM api_key_status WHERE provider=?", (provider,)
+    ).fetchone()
+    failures = (existing["failures_count"] if existing else 0) + (0 if status == "ok" else 1)
+    c.execute(
+        """INSERT INTO api_key_status (
+            provider, status, last_error_msg, last_status_code,
+            last_checked_at, blocked_until, failures_count
+        ) VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(provider) DO UPDATE SET
+            status=excluded.status,
+            last_error_msg=excluded.last_error_msg,
+            last_status_code=excluded.last_status_code,
+            last_checked_at=excluded.last_checked_at,
+            blocked_until=excluded.blocked_until,
+            failures_count=excluded.failures_count""",
+        (provider, status, last_error_msg, last_status_code, now, blocked_until, failures),
+    )
+    c.commit()
+
+
+def reset_api_key_status(provider: str) -> None:
+    upsert_api_key_status(provider, "ok", "", None, "")
+
+
+def get_api_key_statuses() -> dict:
+    rows = _conn().execute("SELECT * FROM api_key_status").fetchall()
+    return {
+        r["provider"]: {
+            "provider": r["provider"],
+            "status": r["status"],
+            "last_error_msg": r["last_error_msg"],
+            "last_status_code": r["last_status_code"],
+            "last_checked_at": r["last_checked_at"],
+            "blocked_until": r["blocked_until"],
+            "failures_count": r["failures_count"],
+        }
+        for r in rows
+    }
+
+
+def get_api_events(search_id: str) -> list:
+    rows = _conn().execute(
+        "SELECT * FROM api_events WHERE search_id=? ORDER BY id ASC", (search_id,)
+    ).fetchall()
+    return [_api_event_row(r) for r in rows]
+
+
 def get_visited_domains(search_id: str) -> set:
     rows = _conn().execute(
         "SELECT DISTINCT domain FROM leads WHERE search_id=? AND domain!=''", (search_id,)
@@ -147,6 +336,12 @@ def list_searches() -> list:
         stats_rows = _conn().execute(
             "SELECT * FROM stats WHERE search_id=?", (r["id"],)
         ).fetchall()
+        location_rows = _conn().execute(
+            "SELECT * FROM search_locations WHERE search_id=?", (r["id"],)
+        ).fetchall()
+        api_event_rows = _conn().execute(
+            "SELECT * FROM api_events WHERE search_id=? ORDER BY id ASC", (r["id"],)
+        ).fetchall()
         result.append({
             "id": r["id"],
             "timestamp": r["timestamp"],
@@ -157,6 +352,13 @@ def list_searches() -> list:
                 "qualifying_count": r["qualifying_count"],
                 "lead_count": r["lead_count"],
             },
+            "location_summary": r["location_summary"],
+            "estimated_queries": r["estimated_queries"],
+            "estimated_api_calls": r["estimated_api_calls"],
+            "cost_warning_level": r["cost_warning_level"],
+            "api_limit_warnings_count": r["api_limit_warnings_count"],
+            "locations": [_search_location_row(l) for l in location_rows],
+            "api_events": [_api_event_row(e) for e in api_event_rows],
             "stats": [_stat_row(s) for s in stats_rows],
         })
     return result
@@ -172,6 +374,12 @@ def get_search(search_id: str) -> Optional[dict]:
     stats_rows = _conn().execute(
         "SELECT * FROM stats WHERE search_id=?", (search_id,)
     ).fetchall()
+    location_rows = _conn().execute(
+        "SELECT * FROM search_locations WHERE search_id=?", (search_id,)
+    ).fetchall()
+    api_event_rows = _conn().execute(
+        "SELECT * FROM api_events WHERE search_id=? ORDER BY id ASC", (search_id,)
+    ).fetchall()
     return {
         "id": r["id"],
         "timestamp": r["timestamp"],
@@ -182,6 +390,13 @@ def get_search(search_id: str) -> Optional[dict]:
             "qualifying_count": r["qualifying_count"],
             "lead_count": r["lead_count"],
         },
+        "location_summary": r["location_summary"],
+        "estimated_queries": r["estimated_queries"],
+        "estimated_api_calls": r["estimated_api_calls"],
+        "cost_warning_level": r["cost_warning_level"],
+        "api_limit_warnings_count": r["api_limit_warnings_count"],
+        "locations": [_search_location_row(l) for l in location_rows],
+        "api_events": [_api_event_row(e) for e in api_event_rows],
         "stats": [_stat_row(s) for s in stats_rows],
         "leads": [_lead_row(l) for l in leads_rows],
     }
@@ -197,9 +412,36 @@ def get_leads_for_searches(search_ids: List[str]) -> List[dict]:
 
 def delete_search(search_id: str) -> bool:
     c = _conn()
+    c.execute("DELETE FROM leads WHERE search_id=?", (search_id,))
+    c.execute("DELETE FROM stats WHERE search_id=?", (search_id,))
+    c.execute("DELETE FROM search_locations WHERE search_id=?", (search_id,))
+    c.execute("DELETE FROM api_events WHERE search_id=?", (search_id,))
     cur = c.execute("DELETE FROM searches WHERE id=?", (search_id,))
     c.commit()
     return cur.rowcount > 0
+
+
+def _search_location_row(r) -> dict:
+    return {
+        "input_type": r["input_type"],
+        "input_value": r["input_value"],
+        "input_label": r["input_label"],
+        "coverage_mode": r["coverage_mode"],
+        "expanded_terms": json.loads(r["expanded_terms_json"] or "[]"),
+        "expanded_count": r["expanded_count"],
+    }
+
+
+def _api_event_row(r) -> dict:
+    return {
+        "provider": r["provider"],
+        "event_type": r["event_type"],
+        "status_code": r["status_code"],
+        "error_code": r["error_code"],
+        "message": r["message"],
+        "detected_at": r["detected_at"],
+        "action_taken": r["action_taken"],
+    }
 
 
 def _stat_row(r) -> dict:
