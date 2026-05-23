@@ -469,6 +469,8 @@ async def get_results(job_id: str):
         "raw_count": r["raw_count"],
         "stats": r["stats"],
         "leads": [lead.to_dict() for lead in r["final"]],
+        "shown_count": len(r["final"]),
+        "unique_count": r.get("unique_count", len(r["final"])),
         "target_count": r.get("target_count", 0),
         "qualifying_count": r.get("qualifying_count", len(r["final"])),
         "api_events": r.get("api_events", []),
@@ -484,17 +486,26 @@ def _leads_to_excel(leads: list, stats: list) -> bytes:
     return buf.getvalue()
 
 
+def _export_leads_for_scope(results: dict, scope: str) -> tuple[list, str]:
+    if scope == "all_qualified":
+        leads = results.get("all_qualified") or results.get("final") or []
+        return [l.to_dict() for l in leads], "leads_all_qualified.xlsx"
+    leads = results.get("final") or []
+    return [l.to_dict() for l in leads], "leads_target.xlsx"
+
+
 @app.get("/api/export/{job_id}/excel")
-async def export_excel(job_id: str):
+async def export_excel(job_id: str, scope: str = Query("target")):
     job = _jobs.get(job_id)
     if not job or not job["results"]:
         return Response("Not found", status_code=404)
     r = job["results"]
-    content = _leads_to_excel([l.to_dict() for l in r["final"]], r["stats"])
+    leads, filename = _export_leads_for_scope(r, scope)
+    content = _leads_to_excel(leads, r["stats"])
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=leads_clean.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 

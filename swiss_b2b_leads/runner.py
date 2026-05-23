@@ -322,6 +322,7 @@ def run_search(
     all_raw_by_source: Dict[str, List[Lead]] = {}
     visited_domains: Set[str] = prior_visited_domains.copy() if prior_visited_domains else set()
     final_qualifying: List[Lead] = []
+    final_unique: List[Lead] = []
     clean_by_source: Dict[str, List[Lead]] = {}
 
     combos = max(1, len(cities) * len(categories))
@@ -362,10 +363,10 @@ def run_search(
         )
 
         all_clean = [l for leads in clean_by_source.values() for l in leads]
-        final = deduplicate(all_clean)
-        final_qualifying = [l for l in final if _meets_quality(l, require_email, require_phone, require_website)]
+        final_unique = deduplicate(all_clean)
+        final_qualifying = [l for l in final_unique if _meets_quality(l, require_email, require_phone, require_website)]
 
-        log(f"Round {attempt+1}: {len(final_qualifying)}/{target_count} qualifying | {len(final)} total unique")
+        log(f"Round {attempt+1}: {len(final_qualifying)}/{target_count} qualifying | {len(final_unique)} total unique")
 
         if len(final_qualifying) >= target_count:
             log(f"✓ Target reached! Returning top {target_count} qualifying leads.")
@@ -386,6 +387,8 @@ def run_search(
         "by_source": clean_by_source,
         "stats": stats,
         "final": final_qualifying[:target_count],
+        "all_qualified": final_qualifying,
+        "unique_count": len(final_unique),
         "target_count": target_count,
         "qualifying_count": len(final_qualifying),
         "api_events": api_events,

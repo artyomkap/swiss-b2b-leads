@@ -1,5 +1,6 @@
 import re
 import time
+import math
 import requests
 from bs4 import BeautifulSoup
 from typing import List, Callable, Optional
@@ -89,15 +90,19 @@ def collect(
     session.headers.update(HEADERS)
 
     total_combos = len(cities) * len(categories)
+    per_combo_limit = max(PAGE_SIZE, math.ceil(max_results / max(1, total_combos)))
     combo_num = 0
 
     for city in cities:
         for category in categories:
+            if len(all_leads) >= max_results:
+                break
             combo_num += 1
             collected = 0
             pos = 0
             _log(f"[search.ch] {combo_num}/{total_combos}: '{category}' in {city}")
-            while collected < max_results:
+            combo_limit = min(per_combo_limit, max_results - len(all_leads))
+            while collected < combo_limit and len(all_leads) < max_results:
                 try:
                     resp = session.get(
                         BASE_URL,
@@ -111,17 +116,22 @@ def collect(
                     if not page_leads:
                         _log(f"[search.ch] No results at pos={pos} for '{category}' in {city}")
                         break
-                    limit = max_results - collected
+                    limit = min(combo_limit - collected, max_results - len(all_leads))
                     all_leads.extend(page_leads[:limit])
                     collected += len(page_leads[:limit])
-                    _log(f"[search.ch] {city} / {category}: +{len(page_leads[:limit])} ({collected} collected)")
-                    if collected >= max_results:
+                    _log(
+                        f"[search.ch] {city} / {category}: +{len(page_leads[:limit])} "
+                        f"({collected}/{combo_limit} combo, {len(all_leads)}/{max_results} total)"
+                    )
+                    if collected >= combo_limit or len(all_leads) >= max_results:
                         break
                     pos += PAGE_SIZE
                     time.sleep(1.5)
                 except requests.RequestException as e:
                     _log(f"[search.ch] Error: {e}")
                     break
+        if len(all_leads) >= max_results:
+            break
 
     _log(f"[search.ch] Done: {len(all_leads)} leads collected")
     return all_leads

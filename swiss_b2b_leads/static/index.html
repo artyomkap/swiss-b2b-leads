@@ -215,6 +215,8 @@
     .btn-export { flex: 1; min-width: 140px; background: var(--bg); color: var(--text);
                   border: 1px solid var(--border); }
     .btn-export:hover { background: var(--border); }
+    .result-note { margin-top:.75rem; padding:.65rem .75rem; background:#f8fafc; border:1px solid var(--border);
+      border-radius:var(--radius); color:var(--muted); font-size:.82rem; line-height:1.45; }
   </style>
 </head>
 <body>
@@ -427,6 +429,7 @@
           <div id="qbar-fill" style="height:100%;background:var(--primary);transition:width .4s;border-radius:4px"></div>
         </div>
       </div>
+      <div class="result-note" id="result-note"></div>
     </div>
 
     <div class="card" id="stats-box" style="margin-top:1rem">
@@ -452,8 +455,8 @@
     <div class="card" id="export-box" style="margin-top:1rem">
       <h2>Export</h2>
       <div class="export-btns">
-        <button class="btn-export" onclick="exportFile('excel')">&#128229; Download Excel</button>
-        <button class="btn-export" onclick="exportFile('csv')">&#128229; Download CSV</button>
+        <button class="btn-export" onclick="exportExcel('target')">&#128229; File 1: Target Leads Excel</button>
+        <button class="btn-export" onclick="exportExcel('all_qualified')">&#128229; File 2: All Qualified Excel</button>
       </div>
     </div>
 
@@ -895,12 +898,13 @@
     const data = await fetch(`/api/results/${jobId}`).then(r => r.json());
     allLeads = data.leads;
     document.getElementById("m-raw").textContent = data.raw_count;
-    document.getElementById("m-unique").textContent = data.leads.length;
+    document.getElementById("m-unique").textContent = data.unique_count || data.leads.length;
     document.getElementById("m-phone").textContent = data.leads.filter(l => l.phone).length;
     document.getElementById("m-email").textContent = data.leads.filter(l => l.email).length;
 
     const qCount = data.qualifying_count || data.leads.length;
     const target = data.target_count || data.leads.length;
+    const shown = data.shown_count || data.leads.length;
     document.getElementById("m-qualified").textContent = `${qCount}/${target}`;
     const pct = Math.min(100, Math.round(qCount / Math.max(target, 1) * 100));
     const barWrap = document.getElementById("quality-bar-wrap");
@@ -916,6 +920,11 @@
     } else {
       barWrap.style.display = "none";
     }
+    document.getElementById("result-note").innerHTML =
+      `Showing <b>${shown}</b> target leads. Sources collected <b>${data.raw_count}</b> records; ` +
+      `after deduplication there are <b>${data.unique_count || shown}</b> unique leads and ` +
+      `<b>${qCount}</b> qualified leads available. File 1 exports the shown target list; ` +
+      `File 2 exports all qualified leads without the target cut-off.`;
     document.getElementById("metrics").style.display = "block";
     renderStatsTable(data.stats);
     document.getElementById("stats-box").style.display = "block";
@@ -987,9 +996,9 @@
     document.getElementById("count-badge").textContent = `${n} of ${allLeads.length} leads`;
   }
 
-  function exportFile(type) {
+  function exportExcel(scope) {
     if (!currentJobId) return;
-    window.location.href = `/api/export/${currentJobId}/${type}`;
+    window.location.href = `/api/export/${currentJobId}/excel?scope=${encodeURIComponent(scope)}`;
   }
 
   function scrollProgressIntoView() {
