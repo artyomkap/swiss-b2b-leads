@@ -1,15 +1,4 @@
-.env
-.env.*
-!.env.example
-
-CLAUDE.md
-.claude/
-.claude/settings.local.json
-
-.venv/
-venv/
-env/
-
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -17,22 +6,29 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-swiss_b2b_leads/output/
+# Virtual environments
+.venv/
+venv/
+env/
+swiss_b2b_leads/.venv/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+swiss_b2b_leads/.env
+
+# Runtime data
 output/
-swiss_b2b_leads/docs/
-docs/
-
-*.log
-*.tmp
-*.bak
-*.sqlite
+swiss_b2b_leads/output/
 *.db
-*.db-shm
-*.db-wal
-*.xlsx
-*.xls
-*.csv
-~$*
+*.sqlite
+*.sqlite3
+*.log
 
+# IDE / OS
+.idea/
+.vscode/
 .DS_Store
 Thumbs.db
